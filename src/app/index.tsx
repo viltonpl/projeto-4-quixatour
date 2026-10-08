@@ -18,9 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-
-const LOGO_URL =
-  'https://lh3.googleusercontent.com/aida/AEtjO1VWZHjYiMfzbMMMGlJ47l6U_FfPBhZSn3gSR7AT9UEHx3cTSogap0l-aFEk6AmkGZc6opZ4xMZh0qZR5siva86zmmeKdYD73JTU8aUcj05EudzVQjWoFKrPy5baHM5jgifmGz5AD9oXKq-7BEDLZdQETcvn7ouqRxXtv3tA1padA-HtgJfLstjI8Iwbqu4t_fmoZx1j4caYQWFFT-hBNMBSJlXYvxDB8GySX9hfT_3R28HKLqWfP-ntabJI';
+import { AppImages } from '@/constants/images';
 
 type ButtonState = 'idle' | 'loading' | 'success';
 
@@ -74,7 +72,7 @@ export default function LoginScreen() {
               <View style={styles.headerSection}>
                 <View style={styles.logoCircle}>
                   <Image
-                    source={{ uri: LOGO_URL }}
+                    source={AppImages.logo}
                     style={styles.logoImage}
                     resizeMode="contain"
                   />
@@ -258,24 +256,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   logoCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: QuixaColors.surfaceContainer,
+    width: 100,
+    height: 100,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 12,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    marginBottom: 20,
   },
   logoImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 48,
   },
   title: {
     fontSize: 32,

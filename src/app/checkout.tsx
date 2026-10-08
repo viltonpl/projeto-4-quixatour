@@ -7,18 +7,16 @@ import {
   TextInput,
   Image,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Animated,
   Alert,
   Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-
-const DEFAULT_IMAGE =
-  'https://lh3.googleusercontent.com/aida/AEtjO1WrQZCGCZER63HnyjvfvirHGKBp7hhVyYghMLAk3Ok7g-xBcMiwpiZoQZzYMDYAF2XcoEUeJ-OB0gDHwXIOMBivetJ8-kHCNl81rBmQhzFYAYcNFNhx1KKXJta_8QUS9c8zKuiEd6UxF14fexEBINO7Wl4qw_W8zM0D3TdatSnT8VQQUEVHgqUXbFtabbmyTbV3_md3M2flAlbYVhiseXAN0oKsdigScnSbjHGS3V-apHyY4UsInG8duO6y';
+import { AppImages } from '@/constants/images';
 
 const GUIDE_AVATAR =
   'https://lh3.googleusercontent.com/aida/AEtjO1XPS9iyG2Ap4zHB749LkMjtbCus-bYJkUA3cL_qqSpKYS7SddbCQYYt3AmTOAKfhkZmHWL-9VaaEVNgIQdjeAA36tetsCJHAwuJnJhMneTN4QqNf-l2_GQ2tbdyBabqg7pgAZhMX5aUnRNt8_dr6KyzQGWdWqcdaq5ZH3m9Wm-plM_EP4N7WrcL6wNhaPpOjpftgyJLsUFtwnsFmwwyI4dblmlAhFMPJm8b-HiWi9W1dh1Y7ElfaRtEqQ';
@@ -28,7 +26,15 @@ export default function CheckoutScreen() {
   const params = useLocalSearchParams();
 
   const title = (params.title as string) || 'Trilha da Galinha Choca & Açude do Cedro';
-  const imageUri = (params.image as string) || DEFAULT_IMAGE;
+  const rawImage = (params.image as string) || 'trilha';
+
+  const getImageSource = () => {
+    if (rawImage === 'trilha') return AppImages.trilha;
+    if (rawImage === 'voo') return AppImages.voo;
+    if (rawImage === 'chale') return AppImages.chale;
+    if (rawImage && rawImage.startsWith('http')) return { uri: rawImage };
+    return AppImages.trilha;
+  };
 
   // Base price calculation (default 85.0)
   const rawPriceStr = (params.price as string) || '85';
@@ -134,7 +140,7 @@ export default function CheckoutScreen() {
             <View style={styles.summaryHeaderRow}>
               <View style={styles.summaryImgWrapper}>
                 <Image
-                  source={{ uri: imageUri }}
+                  source={getImageSource()}
                   style={styles.summaryImg}
                   resizeMode="cover"
                 />

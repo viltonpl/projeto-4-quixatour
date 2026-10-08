@@ -13,24 +13,30 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-
-const DEFAULT_IMAGE =
-  'https://lh3.googleusercontent.com/aida/AEtjO1WrQZCGCZER63HnyjvfvirHGKBp7hhVyYghMLAk3Ok7g-xBcMiwpiZoQZzYMDYAF2XcoEUeJ-OB0gDHwXIOMBivetJ8-kHCNl81rBmQhzFYAYcNFNhx1KKXJta_8QUS9c8zKuiEd6UxF14fexEBINO7Wl4qw_W8zM0D3TdatSnT8VQQUEVHgqUXbFtabbmyTbV3_md3M2flAlbYVhiseXAN0oKsdigScnSbjHGS3V-apHyY4UsInG8duO6y';
+import { AppImages } from '@/constants/images';
 
 export default function DetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
   const title = (params.title as string) || 'Trilha da Galinha Choca & Açude do Cedro';
-  const imageUri = (params.image as string) || DEFAULT_IMAGE;
+  const rawImage = (params.image as string) || 'trilha';
   const price = (params.price as string) || 'R$ 85';
 
   const [isFavorite, setIsFavorite] = useState(false);
 
+  const getImageSource = () => {
+    if (rawImage === 'trilha') return AppImages.trilha;
+    if (rawImage === 'voo') return AppImages.voo;
+    if (rawImage === 'chale') return AppImages.chale;
+    if (rawImage && rawImage.startsWith('http')) return { uri: rawImage };
+    return AppImages.trilha;
+  };
+
   const handleBooking = () => {
     router.push({
       pathname: '/checkout',
-      params: { title, price, image: imageUri },
+      params: { title, price, image: rawImage },
     });
   };
 
@@ -46,7 +52,7 @@ export default function DetailsScreen() {
         {/* 1. Immersive Top Image & Actions Overlay */}
         <View style={styles.imageContainer}>
           <Image
-            source={{ uri: imageUri }}
+            source={getImageSource()}
             style={styles.topImage}
             resizeMode="cover"
           />

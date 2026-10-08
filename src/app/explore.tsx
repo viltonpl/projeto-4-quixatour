@@ -7,22 +7,14 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-
-const CARD_IMAGES = {
-  galinhaChoca:
-    'https://lh3.googleusercontent.com/aida/AEtjO1WrQZCGCZER63HnyjvfvirHGKBp7hhVyYghMLAk3Ok7g-xBcMiwpiZoQZzYMDYAF2XcoEUeJ-OB0gDHwXIOMBivetJ8-kHCNl81rBmQhzFYAYcNFNhx1KKXJta_8QUS9c8zKuiEd6UxF14fexEBINO7Wl4qw_W8zM0D3TdatSnT8VQQUEVHgqUXbFtabbmyTbV3_md3M2flAlbYVhiseXAN0oKsdigScnSbjHGS3V-apHyY4UsInG8duO6y',
-  parapente:
-    'https://lh3.googleusercontent.com/aida/AEtjO1ULq5krg1C6Hq5Yi0yaIU5NvMZw04d5ysuccMBZlCJPEQUIVBrQ7k7BmIZhmce_cSC8PsKNga9N4z60MV1kfLedDORgWw2g-X8lk4LUf4gGKbAAOiXJm6cL2BKS9HDAEX5lkk33HK47vOxyzpHEv0_z8-wzIoznMlfGLlMCv_ZUTfXcdR1JO1eoOXhv2P8S0mGAASs-BCQtb4MGwKf00K2IPBbQ9FYTGLc5dtsRKb3ul-9fxJ8DJ2-UjB8',
-  chale:
-    'https://lh3.googleusercontent.com/aida/AEtjO1VNpjnUCFii8AMtNSICMd0ftd5wXa1Qg6OOQPKEzXfAXB0sYGCtGUwPs0uEZevZErCkA_Zm2hIJPm59vgK9uDc3XtjewEo-x2V5QcKCo_VV3OxwfjDOYeYvT7n_SYgqNB1UrtYENaxkbVhRPCryhbYcfyJQiFAo67aopIQSebXL3Q80wkJaQF8P8k7kqdfowy8O27yRCjNx8OpAr9xOhGbnCqeOo9geUnOoxysgODjiaGkRjX3EWTQMHFSI',
-};
+import { AppImages } from '@/constants/images';
 
 type Category = 'Todos' | 'Trilhas' | 'Aventura' | 'Chalés';
 
@@ -39,10 +31,10 @@ export default function ExploreScreen() {
 
   const categories: Category[] = ['Todos', 'Trilhas', 'Aventura', 'Chalés'];
 
-  const handleCardPress = (title: string, price: string, image: string) => {
+  const handleCardPress = (title: string, price: string, image: any) => {
     router.push({
       pathname: '/details',
-      params: { title, price, image },
+      params: { title, price, image: typeof image === 'string' ? image : '' },
     });
   };
 
@@ -64,32 +56,6 @@ export default function ExploreScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff8f6" />
-
-      {/* 1. Header / Top App Bar */}
-      <View style={styles.header}>
-        <View style={styles.headerTitleRow}>
-          <View style={styles.exploreBadge}>
-            <Ionicons name="compass" size={20} color="#ffffff" />
-          </View>
-          <Text style={styles.headerTitle}>Explorar</Text>
-        </View>
-
-        <View style={styles.headerActions}>
-          <TouchableOpacity activeOpacity={0.7} style={styles.iconBtn}>
-            <Ionicons name="search-outline" size={22} color={QuixaColors.onSurface} />
-          </TouchableOpacity>
-
-          {/* Botão de Perfil no Canto Superior Direito (Sair / Perfil) */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.avatarMiniBtn}
-            onPress={handleProfilePress}
-            accessibilityLabel="Perfil do usuário"
-          >
-            <Ionicons name="person-outline" size={20} color={QuixaColors.primary} />
-          </TouchableOpacity>
-        </View>
-      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -173,7 +139,7 @@ export default function ExploreScreen() {
                 handleCardPress(
                   'Trilha Galinha Choca & Açude do Cedro',
                   'R$ 80',
-                  CARD_IMAGES.galinhaChoca
+                  'trilha'
                 )
               }
             >
@@ -190,13 +156,13 @@ export default function ExploreScreen() {
                 handleCardPress(
                   'Trilha Galinha Choca & Açude do Cedro',
                   'R$ 80',
-                  CARD_IMAGES.galinhaChoca
+                  'trilha'
                 )
               }
             >
               <View style={styles.cardImageContainer}>
                 <Image
-                  source={{ uri: CARD_IMAGES.galinhaChoca }}
+                  source={AppImages.trilha}
                   style={styles.cardImage}
                   resizeMode="cover"
                 />
@@ -250,13 +216,13 @@ export default function ExploreScreen() {
                 handleCardPress(
                   'Voo Duplo de Parapente',
                   'R$ 280',
-                  CARD_IMAGES.parapente
+                  'voo'
                 )
               }
             >
               <View style={styles.cardImageContainer}>
                 <Image
-                  source={{ uri: CARD_IMAGES.parapente }}
+                  source={AppImages.voo}
                   style={styles.cardImage}
                   resizeMode="cover"
                 />
@@ -308,13 +274,13 @@ export default function ExploreScreen() {
                 handleCardPress(
                   'Chalé Vista dos Monólitos',
                   'R$ 220',
-                  CARD_IMAGES.chale
+                  'chale'
                 )
               }
             >
               <View style={styles.cardImageContainer}>
                 <Image
-                  source={{ uri: CARD_IMAGES.chale }}
+                  source={AppImages.chale}
                   style={styles.cardImage}
                   resizeMode="cover"
                 />
@@ -443,20 +409,18 @@ const styles = StyleSheet.create({
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
-  exploreBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: QuixaColors.primaryContainer,
-    justifyContent: 'center',
-    alignItems: 'center',
+  logoHeader: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: QuixaColors.onSurface,
+    letterSpacing: -0.5,
   },
   headerActions: {
     flexDirection: 'row',
@@ -480,7 +444,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 90,
-    paddingTop: 12,
+    paddingTop: 24,
   },
   mainContainer: {
     maxWidth: 390,

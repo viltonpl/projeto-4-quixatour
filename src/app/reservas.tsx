@@ -281,16 +281,26 @@ export default function ReservasScreen() {
                 <View style={styles.compactFooterRow}>
                   <View style={styles.starsRow}>
                     {[1, 2, 3, 4, 5].map((s) => (
-                      <Ionicons key={s} name="star" size={18} color={QuixaColors.primary} />
+                      <Ionicons key={s} name="star" size={16} color={QuixaColors.primary} />
                     ))}
                   </View>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    style={styles.detailsMiniBtn}
-                    onPress={() => Alert.alert('Recibo', 'Recibo da reserva #QX-3901 baixado.')}
-                  >
-                    <Text style={styles.detailsMiniBtnText}>Recibo</Text>
-                  </TouchableOpacity>
+                  <View style={styles.concluidasActionsRow}>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      style={styles.detailsMiniBtn}
+                      onPress={() => Alert.alert('Recibo', 'Recibo da reserva #QX-3901 baixado.')}
+                    >
+                      <Text style={styles.detailsMiniBtnText}>Recibo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.avaliarBtn}
+                      onPress={() => router.push('/avaliar' as any)}
+                    >
+                      <Ionicons name="star" size={13} color="#ffffff" />
+                      <Text style={styles.avaliarBtnText}>Avaliar</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             </View>
@@ -762,9 +772,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: QuixaColors.onSurface,
   },
+  concluidasActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   detailsMiniBtn: {
     height: 32,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderRadius: 16,
     backgroundColor: '#fdeae5',
     justifyContent: 'center',
@@ -774,6 +789,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#8c3d17',
+  },
+  avaliarBtn: {
+    height: 32,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: QuixaColors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    shadowColor: QuixaColors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  avaliarBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   completedTag: {
     flexDirection: 'row',

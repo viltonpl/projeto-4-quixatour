@@ -166,7 +166,7 @@ export default function DetailsScreen() {
             <TouchableOpacity
               activeOpacity={0.8}
               style={styles.chatBtn}
-              onPress={handleBooking}
+              onPress={() => router.push('/chat' as any)}
               accessibilityLabel="Conversar com o guia"
             >
               <Ionicons

@@ -109,7 +109,7 @@ export default function CheckoutScreen() {
           <Ionicons name="arrow-back" size={24} color={QuixaColors.onSurface} />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Checkout</Text>
+        <Text style={styles.headerTitle}>Pagamento</Text>
 
         <View style={styles.profileBadge}>
           <Ionicons name="person" size={18} color={QuixaColors.primary} />

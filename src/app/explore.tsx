@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,39 +9,76 @@ import {
   ScrollView,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
+import { ExploreService, ExperienceItem } from '@/services/exploreService';
 
 type Category = 'Todos' | 'Trilhas' | 'Aventura' | 'Chalés';
 
 export default function ExploreScreen() {
   const router = useRouter();
-  const [selectedCategory, setSelectedCategory] = useState<Category>('Todos');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [favorites, setFavorites] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState<'explorar' | 'favoritos' | 'notificacoes' | 'reservas'>('explorar');
   const [searchQuery, setSearchQuery] = useState('');
+  const [userName, setUserName] = useState('Maria');
+  const [greeting, setGreeting] = useState('Olá, Maria!');
+  const [subtitle, setSubtitle] = useState('O que vamos explorar em Quixadá hoje?');
+  const [categories, setCategories] = useState<string[]>(['Todos', 'Trilhas', 'Aventura', 'Chalés']);
+  const [experiences, setExperiences] = useState<ExperienceItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((prev) => ({ ...prev, [id]: !prev[id] }));
+  const fetchExplore = useCallback(async (cat: string, search: string) => {
+    try {
+      setLoading(true);
+      const data = await ExploreService.getExploreData(cat, search);
+      setUserName(data.userName || 'Maria');
+      setGreeting(data.greeting || 'Olá, Maria!');
+      setSubtitle(data.subtitle || 'O que vamos explorar em Quixadá hoje?');
+      if (data.categories?.length) {
+        setCategories(data.categories);
+      }
+      setExperiences(data.experiences || []);
+
+      const favMap: { [key: string]: boolean } = {};
+      data.experiences.forEach(e => {
+        if (e.is_favorite) favMap[`card${e.id}`] = true;
+      });
+      setFavorites(prev => ({ ...prev, ...favMap }));
+    } catch (err) {
+      console.warn('Erro ao carregar explorar:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchExplore(selectedCategory, searchQuery);
+  }, [selectedCategory, searchQuery, fetchExplore]);
+
+  const toggleFavorite = async (id: number) => {
+    const key = `card${id}`;
+    const nextState = !favorites[key];
+    setFavorites((prev) => ({ ...prev, [key]: nextState }));
+    await ExploreService.toggleFavorite(id);
   };
 
-  const categories: Category[] = ['Todos', 'Trilhas', 'Aventura', 'Chalés'];
-
-  const handleCardPress = (title: string, price: string, image: any) => {
+  const handleCardPress = (id: number, title: string, price: string, image: any) => {
     router.push({
       pathname: '/details',
-      params: { title, price, image: typeof image === 'string' ? image : '' },
+      params: { id: String(id), title, price, image: typeof image === 'string' ? image : 'trilha' },
     });
   };
 
   const handleProfilePress = () => {
     Alert.alert(
       'Perfil de Usuário',
-      'Deseja sair do aplicativo e retornar ao login?',
+      `Conectado como: ${userName}\nDeseja sair do aplicativo e retornar ao login?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -52,6 +89,18 @@ export default function ExploreScreen() {
       ]
     );
   };
+
+  const getImageSource = (key: string) => {
+    if (key === 'trilha') return AppImages.trilha;
+    if (key === 'voo') return AppImages.voo;
+    if (key === 'chale') return AppImages.chale;
+    return AppImages.trilha;
+  };
+
+  // Se a aba for 'favoritos', filtra apenas as experiências marcadas com coração
+  const displayedExperiences = activeTab === 'favoritos'
+    ? experiences.filter(e => favorites[`card${e.id}`])
+    : experiences;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -132,199 +181,94 @@ export default function ExploreScreen() {
 
           {/* 4. Experiências em Destaque */}
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Experiências em destaque</Text>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() =>
-                handleCardPress(
-                  'Trilha Galinha Choca & Açude do Cedro',
-                  'R$ 80',
-                  'trilha'
-                )
-              }
-            >
-              <Text style={styles.seeAllText}>Ver todas</Text>
-            </TouchableOpacity>
+            <Text style={styles.sectionTitle}>
+              {activeTab === 'favoritos' ? 'Meus Favoritos' : 'Experiências em destaque'}
+            </Text>
+            {activeTab !== 'favoritos' && (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setSelectedCategory('Todos')}
+              >
+                <Text style={styles.seeAllText}>Ver todas</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
-          {/* Card 1: Trilha Galinha Choca & Açude */}
-          {(selectedCategory === 'Todos' || selectedCategory === 'Trilhas') && (
-            <TouchableOpacity
-              activeOpacity={0.92}
-              style={styles.card}
-              onPress={() =>
-                handleCardPress(
-                  'Trilha Galinha Choca & Açude do Cedro',
-                  'R$ 80',
-                  'trilha'
-                )
-              }
-            >
-              <View style={styles.cardImageContainer}>
-                <Image
-                  source={AppImages.trilha}
-                  style={styles.cardImage}
-                  resizeMode="cover"
-                />
+          {loading ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={QuixaColors.primary} />
+            </View>
+          ) : displayedExperiences.length === 0 ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <Ionicons name="compass-outline" size={48} color={QuixaColors.secondary} />
+              <Text style={{ marginTop: 12, color: QuixaColors.secondary, fontSize: 14 }}>
+                {activeTab === 'favoritos'
+                  ? 'Você ainda não favoritou nenhuma experiência.'
+                  : 'Nenhuma experiência encontrada.'}
+              </Text>
+            </View>
+          ) : (
+            displayedExperiences.map((item) => {
+              const isFav = Boolean(favorites[`card${item.id}`]);
+              return (
                 <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={styles.favoriteBtn}
-                  onPress={() => toggleFavorite('card1')}
+                  key={item.id}
+                  activeOpacity={0.92}
+                  style={styles.card}
+                  onPress={() =>
+                    handleCardPress(
+                      item.id,
+                      item.title,
+                      item.price_label,
+                      item.image_key
+                    )
+                  }
                 >
-                  <Ionicons
-                    name={favorites['card1'] ? 'heart' : 'heart-outline'}
-                    size={20}
-                    color={favorites['card1'] ? '#ba1a1a' : QuixaColors.primary}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.cardBody}>
-                <View style={styles.cardTitleRow}>
-                  <Text style={styles.cardTitle}>
-                    Trilha Galinha Choca & Açude
-                  </Text>
-                  <View style={styles.ratingBadge}>
-                    <Ionicons name="star" size={16} color={QuixaColors.primaryContainer} />
-                    <Text style={styles.ratingText}>4.9</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardFooterRow}>
-                  <View style={styles.cardDetailInfo}>
-                    <Ionicons
-                      name="time-outline"
-                      size={16}
-                      color={QuixaColors.secondary}
+                  <View style={styles.cardImageContainer}>
+                    <Image
+                      source={getImageSource(item.image_key)}
+                      style={styles.cardImage}
+                      resizeMode="cover"
                     />
-                    <Text style={styles.cardDetailText}>
-                      3h30 • Nível moderado
-                    </Text>
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      style={styles.favoriteBtn}
+                      onPress={() => toggleFavorite(item.id)}
+                    >
+                      <Ionicons
+                        name={isFav ? 'heart' : 'heart-outline'}
+                        size={20}
+                        color={isFav ? '#ba1a1a' : QuixaColors.primary}
+                      />
+                    </TouchableOpacity>
                   </View>
-                  <Text style={styles.priceText}>R$ 80</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
 
-          {/* Card 2: Voo Duplo de Parapente */}
-          {(selectedCategory === 'Todos' || selectedCategory === 'Aventura') && (
-            <TouchableOpacity
-              activeOpacity={0.92}
-              style={styles.card}
-              onPress={() =>
-                handleCardPress(
-                  'Voo Duplo de Parapente',
-                  'R$ 280',
-                  'voo'
-                )
-              }
-            >
-              <View style={styles.cardImageContainer}>
-                <Image
-                  source={AppImages.voo}
-                  style={styles.cardImage}
-                  resizeMode="cover"
-                />
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={styles.favoriteBtn}
-                  onPress={() => toggleFavorite('card2')}
-                >
-                  <Ionicons
-                    name={favorites['card2'] ? 'heart' : 'heart-outline'}
-                    size={20}
-                    color={favorites['card2'] ? '#ba1a1a' : QuixaColors.primary}
-                  />
+                  <View style={styles.cardBody}>
+                    <View style={styles.cardTitleRow}>
+                      <Text style={styles.cardTitle}>{item.title}</Text>
+                      <View style={styles.ratingBadge}>
+                        <Ionicons name="star" size={16} color={QuixaColors.primaryContainer} />
+                        <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cardFooterRow}>
+                      <View style={styles.cardDetailInfo}>
+                        <Ionicons
+                          name="time-outline"
+                          size={16}
+                          color={QuixaColors.secondary}
+                        />
+                        <Text style={styles.cardDetailText}>
+                          {item.duration} • {item.difficulty}
+                        </Text>
+                      </View>
+                      <Text style={styles.priceText}>{item.price_label}</Text>
+                    </View>
+                  </View>
                 </TouchableOpacity>
-              </View>
-
-              <View style={styles.cardBody}>
-                <View style={styles.cardTitleRow}>
-                  <Text style={styles.cardTitle}>Voo Duplo de Parapente</Text>
-                  <View style={styles.ratingBadge}>
-                    <Ionicons name="star" size={16} color={QuixaColors.primaryContainer} />
-                    <Text style={styles.ratingText}>5.0</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardFooterRow}>
-                  <View style={styles.cardDetailInfo}>
-                    <Ionicons
-                      name="time-outline"
-                      size={16}
-                      color={QuixaColors.secondary}
-                    />
-                    <Text style={styles.cardDetailText}>
-                      1h • Voo panorâmico
-                    </Text>
-                  </View>
-                  <Text style={styles.priceText}>R$ 280</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
-
-          {/* Card 3: Chalé Vista dos Monólitos */}
-          {(selectedCategory === 'Todos' || selectedCategory === 'Chalés') && (
-            <TouchableOpacity
-              activeOpacity={0.92}
-              style={styles.card}
-              onPress={() =>
-                handleCardPress(
-                  'Chalé Vista dos Monólitos',
-                  'R$ 220',
-                  'chale'
-                )
-              }
-            >
-              <View style={styles.cardImageContainer}>
-                <Image
-                  source={AppImages.chale}
-                  style={styles.cardImage}
-                  resizeMode="cover"
-                />
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  style={styles.favoriteBtn}
-                  onPress={() => toggleFavorite('card3')}
-                >
-                  <Ionicons
-                    name={favorites['card3'] ? 'heart' : 'heart-outline'}
-                    size={20}
-                    color={favorites['card3'] ? '#ba1a1a' : QuixaColors.primary}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.cardBody}>
-                <View style={styles.cardTitleRow}>
-                  <Text style={styles.cardTitle}>
-                    Chalé Vista dos Monólitos
-                  </Text>
-                  <View style={styles.ratingBadge}>
-                    <Ionicons name="star" size={16} color={QuixaColors.primaryContainer} />
-                    <Text style={styles.ratingText}>4.8</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardFooterRow}>
-                  <View style={styles.cardDetailInfo}>
-                    <Ionicons
-                      name="home-outline"
-                      size={16}
-                      color={QuixaColors.secondary}
-                    />
-                    <Text style={styles.cardDetailText}>
-                      Diária com café incluso
-                    </Text>
-                  </View>
-                  <Text style={styles.priceText}>
-                    R$ 220 <Text style={styles.perNightText}>/noite</Text>
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+              );
+            })
           )}
         </View>
       </ScrollView>

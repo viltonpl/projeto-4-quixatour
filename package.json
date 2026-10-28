@@ -34,6 +34,9 @@
   },
   "scripts": {
     "start": "expo start",
+    "backend": "npm --prefix backend run dev",
+    "backend:start": "npm --prefix backend start",
+    "seed": "npm --prefix backend run seed",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

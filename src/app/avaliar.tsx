@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,11 +10,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
+import { AvaliarService, ReviewContext } from '@/services/avaliarService';
 
 const RATINGS_MAP: { [key: number]: string } = {
   1: 'Poderia ter sido melhor 🌧️',
@@ -26,20 +28,78 @@ const RATINGS_MAP: { [key: number]: string } = {
 
 export default function AvaliarScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+
+  const reservationIdParam = params.reservationId ? Number(params.reservationId) : 3;
+  const initialTitle = (params.title as string) || 'Trilha da Galinha Choca';
+  const initialGuideName = (params.guideName as string) || 'Guia Zé';
+
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [context, setContext] = useState<ReviewContext>({
+    reservation_id: reservationIdParam,
+    experience_id: params.experienceId ? Number(params.experienceId) : 1,
+    guide_id: 1,
+    experience_title: initialTitle,
+    guide_name: initialGuideName,
+    guide_role: 'Guia Local Credenciado',
+  });
 
-  const handleSendReview = () => {
-    Alert.alert(
-      'Avaliação Enviada!',
-      'Muito obrigado pelo seu feedback. Ele ajuda o Guia Zé e outros exploradores da comunidade!',
-      [
-        {
-          text: 'Concluir',
-          onPress: () => router.back(),
-        },
-      ]
-    );
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchContext() {
+      try {
+        const data = await AvaliarService.getContext(reservationIdParam);
+        if (isMounted && data) {
+          setContext({
+            ...data,
+            experience_title: data.experience_title || initialTitle,
+            guide_name: data.guide_name || initialGuideName,
+          });
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar contexto de avaliação:', err);
+      }
+    }
+    fetchContext();
+    return () => {
+      isMounted = false;
+    };
+  }, [reservationIdParam, initialTitle, initialGuideName]);
+
+  const handleSendReview = async () => {
+    try {
+      setLoading(true);
+      const res = await AvaliarService.submitReview({
+        reservationId: context.reservation_id,
+        experienceId: context.experience_id,
+        rating,
+        ratingLabel: RATINGS_MAP[rating] || 'Excelente!',
+        comment,
+      });
+
+      if (Platform.OS === 'web') {
+        window.alert(`Avaliação enviada com sucesso! Muito obrigado pelo seu feedback para ${context.guide_name}.`);
+        router.back();
+      } else {
+        Alert.alert(
+          'Avaliação Enviada!',
+          `Muito obrigado pelo seu feedback. Ele ajuda o ${context.guide_name} e outros exploradores da comunidade!`,
+          [
+            {
+              text: 'Concluir',
+              onPress: () => router.back(),
+            },
+          ]
+        );
+      }
+    } catch (err) {
+      console.warn('Erro ao enviar avaliação:', err);
+      router.back();
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -85,8 +145,8 @@ export default function AvaliarScreen() {
                 </View>
               </View>
 
-              <Text style={styles.guideName}>Guia Zé</Text>
-              <Text style={styles.experienceSubtitle}>Trilha da Galinha Choca</Text>
+              <Text style={styles.guideName}>{context.guide_name}</Text>
+              <Text style={styles.experienceSubtitle}>{context.experience_title}</Text>
             </View>
 
             {/* Rating Stars Card */}
@@ -150,11 +210,18 @@ export default function AvaliarScreen() {
         <View style={styles.bottomBar}>
           <TouchableOpacity
             activeOpacity={0.88}
-            style={styles.submitBtn}
+            style={[styles.submitBtn, loading && { opacity: 0.8 }]}
             onPress={handleSendReview}
+            disabled={loading}
           >
-            <Text style={styles.submitBtnText}>Enviar Avaliação</Text>
-            <Ionicons name="send" size={18} color="#ffffff" />
+            {loading ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <>
+                <Text style={styles.submitBtnText}>Enviar Avaliação</Text>
+                <Ionicons name="send" size={18} color="#ffffff" />
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

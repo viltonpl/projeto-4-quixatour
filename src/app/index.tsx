@@ -19,40 +19,60 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
+import { LoginService } from '@/services/loginService';
 
 type ButtonState = 'idle' | 'loading' | 'success';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('seu@email.com');
+  const [password, setPassword] = useState('123456');
   const [showPassword, setShowPassword] = useState(false);
   const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(
     null
   );
   const [buttonState, setButtonState] = useState<ButtonState>('idle');
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setButtonState('loading');
 
-    setTimeout(() => {
-      setButtonState('success');
-      setTimeout(() => {
+    try {
+      const response = await LoginService.login(email, password);
+      if (response.success) {
+        setButtonState('success');
+        setTimeout(() => {
+          setButtonState('idle');
+          router.replace('/explore');
+        }, 500);
+      } else {
         setButtonState('idle');
-        router.replace('/explore');
-      }, 600);
-    }, 800);
+        Alert.alert('Erro ao entrar', response.message || 'Verifique seus dados e tente novamente.');
+      }
+    } catch (err: any) {
+      setButtonState('idle');
+      Alert.alert('Aviso', 'Não foi possível conectar ao servidor agora. Entrando em modo offline...');
+      setTimeout(() => router.replace('/explore'), 500);
+    }
   };
 
-  const handleForgotPassword = () => {
-    Alert.alert(
-      'Recuperar Senha',
-      'Um link para redefinir sua senha será enviado para o e-mail cadastrado.'
-    );
+  const handleForgotPassword = async () => {
+    const res = await LoginService.forgotPassword(email || 'seu@email.com');
+    Alert.alert('Recuperar Senha', res.message);
   };
 
-  const handleCreateAccount = () => {
-    router.push('/explore');
+  const handleCreateAccount = async () => {
+    if (!email || !password) {
+      Alert.alert('Criar Conta', 'Por favor, preencha o e-mail e a senha desejados nos campos acima.');
+      return;
+    }
+    const res = await LoginService.register('Explorador', email, password);
+    if (res.success) {
+      Alert.alert('Conta Criada!', 'Sua conta foi criada no banco de dados com sucesso. Fazendo login...', [
+        { text: 'OK', onPress: () => handleLogin() }
+      ]);
+    } else {
+      Alert.alert('Aviso', res.message || 'Erro ao registrar conta.');
+    }
   };
 
   return (

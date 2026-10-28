@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,36 +9,113 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
+import { DetailsService, ExperienceDetails } from '@/services/detailsService';
+import { ExploreService } from '@/services/exploreService';
 
 export default function DetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  const title = (params.title as string) || 'Trilha da Galinha Choca & Açude do Cedro';
-  const rawImage = (params.image as string) || 'trilha';
-  const price = (params.price as string) || 'R$ 85';
+  const initialTitle = (params.title as string) || 'Trilha da Galinha Choca & Açude do Cedro';
+  const initialImage = (params.image as string) || 'trilha';
+  const initialPrice = (params.price as string) || 'R$ 80';
+  const paramId = (params.id as string) || '1';
 
+  const [details, setDetails] = useState<ExperienceDetails | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
 
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      try {
+        setLoading(true);
+        const data = await DetailsService.getDetails(paramId || initialTitle);
+        if (isMounted && data) {
+          setDetails(data);
+          setIsFavorite(data.is_favorite);
+        }
+      } catch (err) {
+        console.warn('Erro ao buscar detalhes da experiência:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadData();
+    return () => {
+      isMounted = false;
+    };
+  }, [paramId, initialTitle]);
+
+  const toggleFavorite = async () => {
+    const next = !isFavorite;
+    setIsFavorite(next);
+    const expId = details?.id || Number(paramId) || 1;
+    await ExploreService.toggleFavorite(expId);
+  };
+
+  const currentImageKey = details?.image_key || initialImage;
+
   const getImageSource = () => {
-    if (rawImage === 'trilha') return AppImages.trilha;
-    if (rawImage === 'voo') return AppImages.voo;
-    if (rawImage === 'chale') return AppImages.chale;
-    if (rawImage && rawImage.startsWith('http')) return { uri: rawImage };
+    if (currentImageKey === 'trilha') return AppImages.trilha;
+    if (currentImageKey === 'voo') return AppImages.voo;
+    if (currentImageKey === 'chale') return AppImages.chale;
+    if (currentImageKey && currentImageKey.startsWith('http')) return { uri: currentImageKey };
     return AppImages.trilha;
   };
 
   const handleBooking = () => {
+    const title = details?.title || initialTitle;
+    const price = details?.price_label || initialPrice;
+    const priceNumber = details?.price || 80;
+    const image = details?.image_key || initialImage;
+    const id = details?.id || paramId;
+
     router.push({
       pathname: '/checkout',
-      params: { title, price, image: rawImage },
+      params: { id: String(id), title, price, priceNumber: String(priceNumber), image },
     });
   };
+
+  const handleChat = () => {
+    const guideId = details?.guide?.id || 1;
+    const guideName = details?.guide?.name || 'Guia Zé';
+    const guideRole = details?.guide?.role || 'Guia Local Credenciado';
+    const guidePhone = details?.guide?.phone || '(88) 99876-5432';
+
+    router.push({
+      pathname: '/chat',
+      params: {
+        guideId: String(guideId),
+        guideName,
+        guideRole,
+        guidePhone,
+      },
+    });
+  };
+
+  const currentTitle = details?.title || initialTitle;
+  const currentPrice = details?.price_label || initialPrice;
+  const currentDuration = details?.duration || '3h30';
+  const currentDifficulty = details?.difficulty || 'Nível Moderado';
+  const currentCategory = details?.category_name || 'Ecoturismo';
+  const currentLocation = details?.location || 'Sertão dos Monólitos, Quixadá - CE';
+  const currentMeeting = details?.meeting_point || 'Cancela Monumental Cedro';
+  const currentRating = details?.rating ? details.rating.toFixed(1) : '4.9';
+  const currentReviews = details?.reviews_count || 128;
+  const currentDesc = details?.description || 'A Trilha da Galinha Choca oferece uma imersão única no coração do Sertão dos Monólitos. Caminhe em meio à caatinga preservada, aprecie a fascinante formação rochosa da Galinha Choca e conclua a jornada contemplando o histórico Açude do Cedro.';
+  const currentInclusions = details?.inclusions && details.inclusions.length > 0 
+    ? details.inclusions 
+    : ['Água mineral', 'Seguro aventura', 'Condutor local'];
+  const guideName = details?.guide?.name || 'Guia Zé';
+  const guideRole = details?.guide?.role || 'Guia Local Credenciado';
+  const guideCadastur = details?.guide?.cadastur || 'Cadastur';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -78,7 +155,7 @@ export default function DetailsScreen() {
             <TouchableOpacity
               activeOpacity={0.8}
               style={styles.actionCircleBtn}
-              onPress={() => setIsFavorite(!isFavorite)}
+              onPress={toggleFavorite}
               accessibilityLabel="Adicionar aos favoritos"
             >
               <Ionicons
@@ -93,7 +170,7 @@ export default function DetailsScreen() {
           <View style={styles.imageBadgesRow}>
             <View style={styles.imageBadge}>
               <Ionicons name="leaf-outline" size={16} color={QuixaColors.tertiary} />
-              <Text style={styles.imageBadgeTextTertiary}>Ecoturismo</Text>
+              <Text style={styles.imageBadgeTextTertiary}>{currentCategory}</Text>
             </View>
 
             <View style={styles.imageBadge}>
@@ -110,32 +187,32 @@ export default function DetailsScreen() {
             <View style={styles.locationRow}>
               <Ionicons name="location" size={18} color={QuixaColors.primary} />
               <Text style={styles.locationText}>
-                Sertão dos Monólitos, Quixadá - CE
+                {currentLocation}
               </Text>
             </View>
 
-            <Text style={styles.mainTitle}>{title}</Text>
+            <Text style={styles.mainTitle}>{currentTitle}</Text>
 
             {/* Experience Tags / Chips */}
             <View style={styles.chipsWrap}>
               <View style={styles.infoChip}>
                 <Ionicons name="time-outline" size={16} color={QuixaColors.primary} />
-                <Text style={styles.infoChipText}>3h30</Text>
+                <Text style={styles.infoChipText}>{currentDuration}</Text>
               </View>
 
               <View style={styles.infoChip}>
                 <Ionicons name="walk-outline" size={16} color={QuixaColors.primary} />
-                <Text style={styles.infoChipText}>Nível Moderado</Text>
+                <Text style={styles.infoChipText}>{currentDifficulty}</Text>
               </View>
 
               <View style={styles.infoChip}>
                 <Ionicons name="navigate-outline" size={16} color={QuixaColors.primary} />
-                <Text style={styles.infoChipText}>Açude do Cedro</Text>
+                <Text style={styles.infoChipText}>{currentMeeting}</Text>
               </View>
 
               <View style={styles.infoChip}>
                 <Ionicons name="star" size={16} color={QuixaColors.primaryContainer} />
-                <Text style={styles.infoChipText}>4.9 (128)</Text>
+                <Text style={styles.infoChipText}>{currentRating} ({currentReviews})</Text>
               </View>
             </View>
           </View>
@@ -153,12 +230,12 @@ export default function DetailsScreen() {
               </View>
 
               <View style={styles.guideInfoCol}>
-                <Text style={styles.guideName}>Guia Zé</Text>
+                <Text style={styles.guideName}>{guideName}</Text>
                 <View style={styles.guideMetaRow}>
                   <View style={styles.cadasturBadge}>
-                    <Text style={styles.cadasturText}>Cadastur</Text>
+                    <Text style={styles.cadasturText}>{guideCadastur}</Text>
                   </View>
-                  <Text style={styles.guideSubtext}>Guia Local Credenciado</Text>
+                  <Text style={styles.guideSubtext}>{guideRole}</Text>
                 </View>
               </View>
             </View>
@@ -166,7 +243,7 @@ export default function DetailsScreen() {
             <TouchableOpacity
               activeOpacity={0.8}
               style={styles.chatBtn}
-              onPress={() => router.push('/chat' as any)}
+              onPress={handleChat}
               accessibilityLabel="Conversar com o guia"
             >
               <Ionicons
@@ -181,7 +258,7 @@ export default function DetailsScreen() {
           <View style={styles.sectionBlock}>
             <Text style={styles.sectionHeading}>Sobre a Experiência</Text>
             <Text style={styles.descriptionText}>
-              A Trilha da Galinha Choca oferece uma imersão única no coração do Sertão dos Monólitos. Caminhe em meio à caatinga preservada, aprecie a fascinante formação rochosa da Galinha Choca e conclua a jornada contemplando o histórico Açude do Cedro.
+              {currentDesc}
             </Text>
           </View>
 
@@ -189,20 +266,22 @@ export default function DetailsScreen() {
           <View style={styles.sectionBlock}>
             <Text style={styles.sectionHeading}>O que está incluído</Text>
             <View style={styles.inclusionsWrap}>
-              <View style={styles.inclusionBadge}>
-                <Ionicons name="water-outline" size={18} color={QuixaColors.primary} />
-                <Text style={styles.inclusionText}>Água mineral</Text>
-              </View>
-
-              <View style={styles.inclusionBadge}>
-                <Ionicons name="shield-checkmark-outline" size={18} color={QuixaColors.primary} />
-                <Text style={styles.inclusionText}>Seguro aventura</Text>
-              </View>
-
-              <View style={styles.inclusionBadge}>
-                <Ionicons name="person-outline" size={18} color={QuixaColors.primary} />
-                <Text style={styles.inclusionText}>Condutor local</Text>
-              </View>
+              {currentInclusions.map((inc, index) => (
+                <View key={index} style={styles.inclusionBadge}>
+                  <Ionicons 
+                    name={
+                      inc.toLowerCase().includes('água') ? 'water-outline' :
+                      inc.toLowerCase().includes('seguro') ? 'shield-checkmark-outline' :
+                      inc.toLowerCase().includes('condutor') || inc.toLowerCase().includes('guia') ? 'person-outline' :
+                      inc.toLowerCase().includes('café') || inc.toLowerCase().includes('degust') ? 'cafe-outline' :
+                      'checkmark-circle-outline'
+                    } 
+                    size={18} 
+                    color={QuixaColors.primary} 
+                  />
+                  <Text style={styles.inclusionText}>{inc}</Text>
+                </View>
+              ))}
             </View>
           </View>
         </View>
@@ -211,8 +290,8 @@ export default function DetailsScreen() {
       {/* 3. Floating Bottom Sticky Bar */}
       <View style={styles.bottomStickyBar}>
         <View style={styles.priceCol}>
-          <Text style={styles.priceLabel}>Valor por pessoa</Text>
-          <Text style={styles.priceAmount}>{price}</Text>
+          <Text style={styles.priceLabel}>VALOR POR PESSOA</Text>
+          <Text style={styles.priceAmount}>{currentPrice}</Text>
         </View>
 
         <TouchableOpacity
@@ -298,98 +377,95 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   imageBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    backgroundColor: 'rgba(255, 248, 246, 0.94)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
     elevation: 2,
   },
   imageBadgeTextTertiary: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: QuixaColors.tertiary,
   },
   imageBadgeTextPrimary: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
     color: QuixaColors.primary,
   },
   detailsContent: {
-    maxWidth: 390,
-    width: '100%',
-    alignSelf: 'center',
     paddingHorizontal: 20,
     paddingTop: 24,
-    gap: 24,
   },
   headerGroup: {
-    gap: 10,
+    marginBottom: 24,
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    marginBottom: 8,
   },
   locationText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: QuixaColors.onSurfaceVariant,
+    fontSize: 13,
+    fontWeight: '600',
+    color: QuixaColors.primary,
   },
   mainTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
     color: QuixaColors.onSurface,
-    lineHeight: 32,
     letterSpacing: -0.5,
+    lineHeight: 30,
+    marginBottom: 16,
   },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    paddingTop: 4,
   },
   infoChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: QuixaColors.surfaceContainer,
+    backgroundColor: QuixaColors.surfaceContainerLowest,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: QuixaColors.outlineVariant,
   },
   infoChipText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: QuixaColors.onSurface,
+    color: QuixaColors.onSurfaceVariant,
   },
   guideCard: {
-    backgroundColor: QuixaColors.surfaceContainerLow,
-    borderRadius: 24,
-    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
+    backgroundColor: QuixaColors.surfaceContainerLow,
+    padding: 16,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: QuixaColors.outlineVariant,
+    marginBottom: 24,
   },
   guideLeftCol: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
     flex: 1,
   },
   guideAvatarWrapper: {
@@ -405,8 +481,8 @@ const styles = StyleSheet.create({
   },
   verifiedBadge: {
     position: 'absolute',
-    bottom: -2,
-    right: -2,
+    bottom: -1,
+    right: -1,
     width: 18,
     height: 18,
     borderRadius: 9,
@@ -414,37 +490,38 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: QuixaColors.surfaceContainerLow,
+    borderColor: '#ffffff',
   },
   guideInfoCol: {
     flex: 1,
   },
   guideName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: QuixaColors.onSurface,
+    marginBottom: 4,
   },
   guideMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
+    gap: 8,
   },
   cadasturBadge: {
-    backgroundColor: '#f1dfd9',
+    backgroundColor: QuixaColors.surfaceContainerHighest,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 10,
+    borderRadius: 6,
   },
   cadasturText: {
     fontSize: 10,
     fontWeight: '700',
-    color: QuixaColors.tertiary,
+    color: QuixaColors.onSurfaceVariant,
+    letterSpacing: 0.5,
   },
   guideSubtext: {
     fontSize: 12,
+    fontWeight: '500',
     color: QuixaColors.onSurfaceVariant,
-    flexShrink: 1,
   },
   chatBtn: {
     width: 44,
@@ -453,36 +530,42 @@ const styles = StyleSheet.create({
     backgroundColor: QuixaColors.secondaryContainer,
     justifyContent: 'center',
     alignItems: 'center',
+    marginLeft: 8,
   },
   sectionBlock: {
-    gap: 8,
+    marginBottom: 24,
   },
   sectionHeading: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: QuixaColors.onSurface,
+    letterSpacing: -0.3,
+    marginBottom: 10,
   },
   descriptionText: {
     fontSize: 14,
+    fontWeight: '400',
     color: QuixaColors.onSurfaceVariant,
     lineHeight: 22,
   },
   inclusionsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   inclusionBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: QuixaColors.surfaceContainer,
+    backgroundColor: QuixaColors.surfaceContainerLowest,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: QuixaColors.outlineVariant,
   },
   inclusionText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: QuixaColors.onSurface,
   },
@@ -491,49 +574,52 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 80,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#fde0d4',
+    backgroundColor: QuixaColors.surfaceContainerLowest,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    borderTopWidth: 1,
+    borderTopColor: QuixaColors.outlineVariant,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 8,
   },
   priceCol: {
-    flexDirection: 'column',
+    justifyContent: 'center',
   },
   priceLabel: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: '700',
     color: QuixaColors.onSurfaceVariant,
+    letterSpacing: 0.5,
   },
   priceAmount: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
     color: QuixaColors.primary,
     letterSpacing: -0.5,
   },
   bookBtn: {
-    height: 52,
-    paddingHorizontal: 24,
-    borderRadius: 26,
-    backgroundColor: QuixaColors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    backgroundColor: QuixaColors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 30,
     shadowColor: QuixaColors.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.32,
-    shadowRadius: 10,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
     elevation: 4,
   },
   bookBtnText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: QuixaColors.onPrimary,
   },

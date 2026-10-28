@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,41 +9,13 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-
-type Message = {
-  id: string;
-  from: 'guide' | 'user';
-  text: string;
-  time: string;
-  read?: boolean;
-};
-
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: '1',
-    from: 'guide',
-    text: 'Olá! Tudo pronto para amanhã? A trilha começa cedo, por isso recomendo dormir bem hoje! 🌄',
-    time: '08:12',
-  },
-  {
-    id: '2',
-    from: 'guide',
-    text: 'Não esqueça de trazer água (pelo menos 1,5L), protetor solar, repelente e calçado fechado. Nos encontramos no ponto de partida às 05:30 na Cancela Monumental. 🥾',
-    time: '08:14',
-  },
-  {
-    id: '3',
-    from: 'user',
-    text: 'Perfeito, Zé! Já estou preparando a mochila. Tenho alguma dúvida sobre o nível de dificuldade — é muito puxado?',
-    time: '08:35',
-    read: true,
-  },
-];
+import { ChatService, ChatMessage } from '@/services/chatService';
 
 function formatTime(): string {
   const now = new Date();
@@ -52,27 +24,110 @@ function formatTime(): string {
 
 export default function ChatScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const scrollRef = useRef<ScrollView>(null);
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
-  const [inputText, setInputText] = useState('');
 
-  const handleSend = () => {
+  const guideIdParam = params.guideId ? Number(params.guideId) : 1;
+  const guideNameParam = (params.guideName as string) || 'Guia Zé';
+  const guidePhoneParam = (params.guidePhone as string) || '(88) 99876-5432';
+
+  const [guide, setGuide] = useState({
+    id: guideIdParam,
+    name: guideNameParam,
+    role: (params.guideRole as string) || 'Guia Credenciado',
+    is_online: true,
+    phone: guidePhoneParam,
+  });
+
+  const [context, setContext] = useState({
+    experience: 'Trilha Galinha Choca • Amanhã, 05:30',
+    status: 'Confirmado',
+  });
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadChat() {
+      try {
+        setLoading(true);
+        const data = await ChatService.getMessages(guideIdParam);
+        if (isMounted && data) {
+          if (data.guide) setGuide((prev) => ({ ...prev, ...data.guide }));
+          if (data.context) setContext(data.context);
+          if (data.messages) setMessages(data.messages);
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar mensagens:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadChat();
+    return () => {
+      isMounted = false;
+    };
+  }, [guideIdParam]);
+
+  const handleSend = async () => {
     const text = inputText.trim();
     if (!text) return;
 
-    const newMsg: Message = {
-      id: Date.now().toString(),
+    // 1. Mensagem otimista do usuário
+    const optimisticMsg: ChatMessage = {
+      id: `temp-${Date.now()}`,
       from: 'user',
       text,
       time: formatTime(),
       read: false,
     };
-    setMessages((prev) => [...prev, newMsg]);
+
+    setMessages((prev) => [...prev, optimisticMsg]);
     setInputText('');
 
     setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
     }, 100);
+
+    try {
+      const res = await ChatService.sendMessage(text, guide.id || guideIdParam);
+      if (res) {
+        // Atualiza a lista com o ID real e anexa a resposta inteligente do guia se houver
+        setMessages((prev) => {
+          const filtered = prev.filter((m) => m.id !== optimisticMsg.id);
+          const next = [...filtered, res.userMessage];
+          if (res.guideReply) {
+            next.push(res.guideReply);
+          }
+          return next;
+        });
+
+        setTimeout(() => {
+          scrollRef.current?.scrollToEnd({ animated: true });
+        }, 150);
+      }
+    } catch (err) {
+      console.warn('Erro ao enviar mensagem:', err);
+    }
+  };
+
+  const handleCall = () => {
+    Alert.alert(
+      `Ligar para ${guide.name}`,
+      `Deseja iniciar uma chamada de voz para o número ${guide.phone || '(88) 99876-5432'}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Chamar',
+          style: 'default',
+          onPress: () => {
+            Alert.alert('Chamada', `Conectando com ${guide.name}...`);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -96,19 +151,26 @@ export default function ChatScreen() {
             <View style={styles.avatarCircle}>
               <Ionicons name="person" size={22} color="#8e4523" />
             </View>
-            <View style={styles.onlineDot} />
+            {guide.is_online && <View style={styles.onlineDot} />}
           </View>
           <View style={styles.headerInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.guideName}>Guia Zé</Text>
+              <Text style={styles.guideName}>{guide.name}</Text>
               <Ionicons name="checkmark-circle" size={14} color={QuixaColors.primary} />
             </View>
-            <Text style={styles.onlineLabel}>Online agora</Text>
+            <Text style={styles.onlineLabel}>
+              {guide.is_online ? 'Online agora' : 'Visto por último hoje'}
+            </Text>
           </View>
         </View>
 
         {/* Call Button */}
-        <TouchableOpacity activeOpacity={0.7} style={styles.callBtn} accessibilityLabel="Ligar">
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.callBtn}
+          onPress={handleCall}
+          accessibilityLabel="Ligar"
+        >
           <Ionicons name="call-outline" size={20} color={QuixaColors.primary} />
         </TouchableOpacity>
       </View>
@@ -117,9 +179,9 @@ export default function ChatScreen() {
       <View style={styles.contextBanner}>
         <View style={styles.contextPill}>
           <Ionicons name="walk-outline" size={14} color="#783616" />
-          <Text style={styles.contextText}>Trilha Galinha Choca • Amanhã, 05:30</Text>
+          <Text style={styles.contextText}>{context.experience}</Text>
           <View style={styles.confirmedBadge}>
-            <Text style={styles.confirmedBadgeText}>Confirmado</Text>
+            <Text style={styles.confirmedBadgeText}>{context.status}</Text>
           </View>
         </View>
       </View>

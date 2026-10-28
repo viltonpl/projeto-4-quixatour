@@ -11,12 +11,14 @@ import {
   Animated,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
+import { CheckoutService } from '@/services/checkoutService';
 
 const GUIDE_AVATAR =
   'https://lh3.googleusercontent.com/aida/AEtjO1XPS9iyG2Ap4zHB749LkMjtbCus-bYJkUA3cL_qqSpKYS7SddbCQYYt3AmTOAKfhkZmHWL-9VaaEVNgIQdjeAA36tetsCJHAwuJnJhMneTN4QqNf-l2_GQ2tbdyBabqg7pgAZhMX5aUnRNt8_dr6KyzQGWdWqcdaq5ZH3m9Wm-plM_EP4N7WrcL6wNhaPpOjpftgyJLsUFtwnsFmwwyI4dblmlAhFMPJm8b-HiWi9W1dh1Y7ElfaRtEqQ';
@@ -27,6 +29,7 @@ export default function CheckoutScreen() {
 
   const title = (params.title as string) || 'Trilha da Galinha Choca & Açude do Cedro';
   const rawImage = (params.image as string) || 'trilha';
+  const expId = params.id ? Number(params.id) : 1;
 
   const getImageSource = () => {
     if (rawImage === 'trilha') return AppImages.trilha;
@@ -37,7 +40,7 @@ export default function CheckoutScreen() {
   };
 
   // Base price calculation (default 85.0)
-  const rawPriceStr = (params.price as string) || '85';
+  const rawPriceStr = (params.price as string) || (params.priceNumber as string) || '85';
   const numericPrice = parseFloat(rawPriceStr.replace(/[^0-9,.]/g, '').replace(',', '.')) || 85.0;
 
   const [participants, setParticipants] = useState(1);
@@ -46,6 +49,7 @@ export default function CheckoutScreen() {
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
   const [installments, setInstallments] = useState('3');
+  const [submitting, setSubmitting] = useState(false);
 
   const [showToast, setShowToast] = useState(false);
   const toastAnim = useState(() => new Animated.Value(-60))[0];
@@ -80,7 +84,7 @@ export default function CheckoutScreen() {
     }, 2500);
   };
 
-  const handleSubmitPayment = () => {
+  const handleSubmitPayment = async () => {
     if (!isPix && (!cardNumber.trim() || !cardExpiry.trim() || !cardCvv.trim())) {
       if (Platform.OS === 'web') {
         window.alert('Por favor, preencha os dados do cartão de crédito (Número, Validade e CVV).');
@@ -90,8 +94,47 @@ export default function CheckoutScreen() {
       return;
     }
 
-    // Direct, immediate navigation to /reservas for reliable execution across Web and Mobile!
-    router.replace('/reservas');
+    try {
+      setSubmitting(true);
+      const res = await CheckoutService.submitPayment({
+        title,
+        numericPrice,
+        participants,
+        paymentMethod,
+        scheduleText: 'Amanhã, 05:30',
+        imageKey: rawImage,
+        cardData: !isPix ? {
+          number: cardNumber,
+          expiry: cardExpiry,
+          cvv: cardCvv,
+          installments: installments,
+        } : undefined,
+      });
+
+      if (res && res.success) {
+        if (Platform.OS === 'web') {
+          router.replace('/reservas');
+        } else {
+          Alert.alert(
+            isPix ? 'Reserva Realizada!' : 'Pagamento Aprovado!',
+            'Sua reserva foi gerada com sucesso e salva na sua lista de reservas!',
+            [
+              {
+                text: 'Ver Minhas Reservas',
+                onPress: () => router.replace('/reservas'),
+              },
+            ]
+          );
+        }
+      } else {
+        router.replace('/reservas');
+      }
+    } catch (err: any) {
+      console.warn('Erro ao processar pagamento:', err);
+      router.replace('/reservas');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -256,7 +299,7 @@ export default function CheckoutScreen() {
                   <View style={styles.pixKeyPill}>
                     <Ionicons name="key-outline" size={18} color={QuixaColors.primary} />
                     <Text style={styles.pixKeyText} numberOfLines={1}>
-                      pix.reserva.quixtour@ce.gov.br
+                      pix.reserva.quixatour@ce.gov.br
                     </Text>
                     <TouchableOpacity
                       activeOpacity={0.8}
@@ -410,13 +453,20 @@ export default function CheckoutScreen() {
 
         <TouchableOpacity
           activeOpacity={0.85}
-          style={styles.submitBtn}
+          style={[styles.submitBtn, submitting && { opacity: 0.8 }]}
           onPress={handleSubmitPayment}
+          disabled={submitting}
         >
-          <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-          <Text style={styles.submitBtnText}>
-            {isPix ? 'Pagar via Pix' : 'Confirmar Cartão'}
-          </Text>
+          {submitting ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+              <Text style={styles.submitBtnText}>
+                {isPix ? 'Pagar via Pix' : 'Confirmar Cartão'}
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

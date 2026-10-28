@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,37 +9,123 @@ import {
   StatusBar,
   Alert,
   Modal,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
+import { ReservasService, ReservationItem } from '@/services/reservasService';
 
 export default function ReservasScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'proximas' | 'concluidas'>('proximas');
   const [showVoucherModal, setShowVoucherModal] = useState(false);
-  const [navTab, setNavTab] = useState<'explorar' | 'favoritos' | 'notificacoes' | 'reservas'>('reservas');
+  const [selectedVoucher, setSelectedVoucher] = useState<{
+    code: string;
+    title: string;
+    qrCode: string;
+    instructions: string;
+  } | null>(null);
 
-  const handleOpenVoucher = () => {
-    setShowVoucherModal(true);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [proximas, setProximas] = useState<ReservationItem[]>([]);
+  const [concluidas, setConcluidas] = useState<ReservationItem[]>([]);
+  const [counts, setCounts] = useState({ proximas: 0, concluidas: 0 });
+
+  const loadReservations = useCallback(async () => {
+    try {
+      const data = await ReservasService.getReservations();
+      if (data) {
+        setProximas(data.proximas || []);
+        setConcluidas(data.concluidas || []);
+        setCounts(data.counts || {
+          proximas: (data.proximas || []).length,
+          concluidas: (data.concluidas || []).length,
+        });
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar reservas:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReservations();
+  }, [loadReservations]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadReservations();
   };
 
-  const handleProfilePress = () => {
-    Alert.alert(
-      'Perfil de Usuário',
-      'Deseja sair do aplicativo e retornar ao login?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sair da Conta',
-          style: 'destructive',
-          onPress: () => router.replace('/'),
-        },
-      ]
-    );
+  const handleOpenVoucher = async (item: ReservationItem) => {
+    try {
+      const voucherData = await ReservasService.getVoucher(item.reservation_code || item.id);
+      setSelectedVoucher({
+        code: voucherData.reservation_code || item.reservation_code,
+        title: voucherData.title || item.title,
+        qrCode: voucherData.qr_code_data || item.qr_code_data || 'QUIXATOUR-VOUCHER',
+        instructions: voucherData.voucher_instructions || item.voucher_instructions || 'Apresente este código ao condutor/guia credenciado no início do passeio.',
+      });
+      setShowVoucherModal(true);
+    } catch (err) {
+      setSelectedVoucher({
+        code: item.reservation_code,
+        title: item.title,
+        qrCode: item.qr_code_data || 'QUIXATOUR-VOUCHER',
+        instructions: item.voucher_instructions || 'Apresente este código ao condutor/guia credenciado.',
+      });
+      setShowVoucherModal(true);
+    }
   };
+
+  const handleReceipt = async (item: ReservationItem) => {
+    try {
+      const receipt = await ReservasService.getReceipt(item.reservation_code || item.id);
+      Alert.alert(
+        'Comprovante de Reserva',
+        `Código: ${receipt.reservation_code || item.reservation_code}\n` +
+        `Experiência: ${receipt.title || item.title}\n` +
+        `Data: ${receipt.date || item.date_label}\n` +
+        `Participantes: ${receipt.participants || item.participants}\n` +
+        `Total Pago: R$ ${(receipt.total || item.total).toFixed(2).replace('.', ',')}\n` +
+        `Método: ${receipt.payment_method || 'Pix'}\n\n` +
+        `Status: Transação concluída com sucesso.`,
+        [{ text: 'Fechar', style: 'default' }]
+      );
+    } catch (err) {
+      Alert.alert('Recibo', `Recibo da reserva ${item.reservation_code} verificado.`);
+    }
+  };
+
+  const handleReview = (item: ReservationItem) => {
+    router.push({
+      pathname: '/avaliar',
+      params: {
+        reservationId: String(item.id),
+        experienceId: String(item.id),
+        title: item.title,
+        guideName: item.guide?.name || 'Guia Zé',
+      },
+    });
+  };
+
+  const getImageSource = (key: string) => {
+    if (key === 'trilha') return AppImages.trilha;
+    if (key === 'voo') return AppImages.voo;
+    if (key === 'chale') return AppImages.chale;
+    if (key && key.startsWith('http')) return { uri: key };
+    return AppImages.trilha;
+  };
+
+  const heroItem = proximas.length > 0 ? proximas[0] : null;
+  const remainingUpcoming = proximas.slice(1);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -49,6 +135,9 @@ export default function ReservasScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[QuixaColors.primary]} />
+        }
       >
         <View style={styles.mainContainer}>
           {/* Screen Title Bar */}
@@ -89,7 +178,7 @@ export default function ReservasScreen() {
                     activeTab === 'proximas' && styles.countBadgeTextActive,
                   ]}
                 >
-                  2
+                  {counts.proximas}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -110,199 +199,256 @@ export default function ReservasScreen() {
               >
                 Concluídas
               </Text>
-              <Text style={styles.concluidasSubtext}>(1)</Text>
+              <Text style={styles.concluidasSubtext}>({counts.concluidas})</Text>
             </TouchableOpacity>
           </View>
 
+          {loading ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={QuixaColors.primary} />
+            </View>
+          ) : null}
+
           {/* TAB 1: Próximas Reservas */}
-          {activeTab === 'proximas' && (
+          {!loading && activeTab === 'proximas' && (
             <View style={styles.tabContentGroup}>
-              {/* Card Principal Hero */}
-              <View style={styles.heroCard}>
-                <View style={styles.cardStatusRow}>
-                  <View style={styles.confirmedTag}>
-                    <Ionicons name="checkmark-circle" size={14} color="#8c3d17" />
-                    <Text style={styles.confirmedTagText}>Confirmado</Text>
-                  </View>
-                  <Text style={styles.reservationCodeText}>#QX-4892</Text>
-                </View>
-
-                {/* Hero Image */}
-                <View style={styles.heroImageWrapper}>
-                  <Image
-                    source={AppImages.trilha}
-                    style={styles.heroImg}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.scheduleOverlay}>
-                    <Ionicons name="time-outline" size={14} color="#ffffff" />
-                    <Text style={styles.scheduleOverlayText}>Amanhã, 05:30</Text>
-                  </View>
-                </View>
-
-                {/* Title & Location */}
-                <View style={styles.titleBlock}>
-                  <Text style={styles.heroTitle}>
-                    Trilha Galinha Choca & Açude do Cedro
-                  </Text>
-                  <View style={styles.locationSubRow}>
-                    <Ionicons name="location" size={15} color={QuixaColors.primary} />
-                    <Text style={styles.locationSubText}>
-                      Cancela Monumental Cedro • 3h 30m
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Guide Information Strip */}
-                <View style={styles.guideStrip}>
-                  <View style={styles.guideStripLeft}>
-                    <View style={styles.guideStripAvatar}>
-                      <Ionicons name="person" size={20} color="#8e4523" />
-                    </View>
-                    <View style={styles.guideStripCol}>
-                      <Text style={styles.guideStripName}>Guia Zé</Text>
-                      <Text style={styles.guideStripRole}>Guia Credenciado</Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    style={styles.chatMiniBtn}
-                    onPress={() => router.push('/chat' as any)}
-                  >
-                    <Ionicons name="chatbubble-outline" size={16} color="#783616" />
-                    <Text style={styles.chatMiniBtnText}>Chat</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Primary Action Button: Ver Voucher */}
-                <TouchableOpacity
-                  activeOpacity={0.88}
-                  style={styles.voucherBtn}
-                  onPress={handleOpenVoucher}
-                >
-                  <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
-                  <Text style={styles.voucherBtnText}>Ver Voucher</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Section: EM SEGUIDA */}
-              <View style={styles.nextSection}>
-                <Text style={styles.nextSectionTitle}>EM SEGUIDA</Text>
-
-                {/* Compact Card: Voo Livre */}
-                <View style={styles.compactCard}>
+              {heroItem ? (
+                /* Card Principal Hero */
+                <View style={styles.heroCard}>
                   <View style={styles.cardStatusRow}>
                     <View style={styles.confirmedTag}>
-                      <Ionicons name="checkmark" size={13} color="#8c3d17" />
-                      <Text style={styles.confirmedTagText}>Confirmado • Voo Duplo</Text>
+                      <Ionicons name="checkmark-circle" size={14} color="#8c3d17" />
+                      <Text style={styles.confirmedTagText}>Confirmado</Text>
                     </View>
-                    <Text style={styles.reservationCodeText}>#QX-5104</Text>
+                    <Text style={styles.reservationCodeText}>{heroItem.reservation_code}</Text>
                   </View>
 
-                  <View style={styles.compactBodyRow}>
+                  {/* Hero Image */}
+                  <View style={styles.heroImageWrapper}>
                     <Image
-                      source={AppImages.voo}
-                      style={styles.compactThumb}
+                      source={getImageSource(heroItem.image_key)}
+                      style={styles.heroImg}
                       resizeMode="cover"
                     />
-
-                    <View style={styles.compactInfoCol}>
-                      <View style={styles.dateTagRow}>
-                        <Ionicons name="calendar-outline" size={13} color={QuixaColors.primary} />
-                        <Text style={styles.dateTagText}>SÁB, 24 DE OUTUBRO • 14:00</Text>
-                      </View>
-
-                      <Text style={styles.compactTitle} numberOfLines={1}>
-                        Voo Livre na Serra do Urucum
-                      </Text>
-
-                      <View style={styles.instructorRow}>
-                        <Ionicons name="navigate-outline" size={14} color={QuixaColors.primary} />
-                        <Text style={styles.instructorText}>Instrutor Chico Asas</Text>
-                      </View>
+                    <View style={styles.scheduleOverlay}>
+                      <Ionicons name="time-outline" size={14} color="#ffffff" />
+                      <Text style={styles.scheduleOverlayText}>{heroItem.schedule_text}</Text>
                     </View>
                   </View>
 
-                  <View style={styles.compactFooterRow}>
-                    <Text style={styles.compactPrice}>R$ 380,00</Text>
+                  {/* Title & Location */}
+                  <View style={styles.titleBlock}>
+                    <Text style={styles.heroTitle}>
+                      {heroItem.title}
+                    </Text>
+                    <View style={styles.locationSubRow}>
+                      <Ionicons name="location" size={15} color={QuixaColors.primary} />
+                      <Text style={styles.locationSubText}>
+                        {heroItem.meeting_point || 'Cancela Monumental Cedro • 3h 30m'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Guide Information Strip */}
+                  <View style={styles.guideStrip}>
+                    <View style={styles.guideStripLeft}>
+                      <View style={styles.guideStripAvatar}>
+                        <Ionicons name="person" size={20} color="#8e4523" />
+                      </View>
+                      <View style={styles.guideStripCol}>
+                        <Text style={styles.guideStripName}>
+                          {heroItem.guide?.name || 'Guia Zé'}
+                        </Text>
+                        <Text style={styles.guideStripRole}>
+                          {heroItem.guide?.role || 'Guia Credenciado'}
+                        </Text>
+                      </View>
+                    </View>
+
                     <TouchableOpacity
                       activeOpacity={0.8}
-                      style={styles.detailsMiniBtn}
+                      style={styles.chatMiniBtn}
                       onPress={() =>
                         router.push({
-                          pathname: '/details',
+                          pathname: '/chat',
                           params: {
-                            title: 'Voo Duplo de Parapente',
-                            price: 'R$ 380',
-                            image: 'voo',
+                            guideId: String(heroItem.guide?.id || 1),
+                            guideName: heroItem.guide?.name || 'Guia Zé',
+                            guideRole: heroItem.guide?.role || 'Guia Credenciado',
                           },
                         })
                       }
                     >
-                      <Text style={styles.detailsMiniBtnText}>Detalhes</Text>
+                      <Ionicons name="chatbubble-outline" size={16} color="#783616" />
+                      <Text style={styles.chatMiniBtnText}>Chat</Text>
                     </TouchableOpacity>
                   </View>
+
+                  {/* Primary Action Button: Ver Voucher */}
+                  <TouchableOpacity
+                    activeOpacity={0.88}
+                    style={styles.voucherBtn}
+                    onPress={() => handleOpenVoucher(heroItem)}
+                  >
+                    <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
+                    <Text style={styles.voucherBtnText}>Ver Voucher</Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
+              ) : (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Text style={{ color: QuixaColors.onSurfaceVariant, fontSize: 14 }}>
+                    Nenhuma reserva futura no momento.
+                  </Text>
+                </View>
+              )}
+
+              {/* Section: EM SEGUIDA (Se houver mais de 1 reserva) */}
+              {remainingUpcoming.length > 0 && (
+                <View style={styles.nextSection}>
+                  <Text style={styles.nextSectionTitle}>EM SEGUIDA</Text>
+
+                  {remainingUpcoming.map((item) => (
+                    <View key={item.id} style={styles.compactCard}>
+                      <View style={styles.cardStatusRow}>
+                        <View style={styles.confirmedTag}>
+                          <Ionicons name="checkmark" size={13} color="#8c3d17" />
+                          <Text style={styles.confirmedTagText}>Confirmado</Text>
+                        </View>
+                        <Text style={styles.reservationCodeText}>{item.reservation_code}</Text>
+                      </View>
+
+                      <View style={styles.compactBodyRow}>
+                        <Image
+                          source={getImageSource(item.image_key)}
+                          style={styles.compactThumb}
+                          resizeMode="cover"
+                        />
+
+                        <View style={styles.compactInfoCol}>
+                          <View style={styles.dateTagRow}>
+                            <Ionicons name="calendar-outline" size={13} color={QuixaColors.primary} />
+                            <Text style={styles.dateTagText}>{item.schedule_text}</Text>
+                          </View>
+
+                          <Text style={styles.compactTitle} numberOfLines={1}>
+                            {item.title}
+                          </Text>
+
+                          <View style={styles.instructorRow}>
+                            <Ionicons name="navigate-outline" size={14} color={QuixaColors.primary} />
+                            <Text style={styles.instructorText}>
+                              {item.guide?.name || 'Condutor Credenciado'}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.compactFooterRow}>
+                        <Text style={styles.compactPrice}>{item.formatted_price}</Text>
+                        <View style={styles.concluidasActionsRow}>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            style={styles.detailsMiniBtn}
+                            onPress={() => handleOpenVoucher(item)}
+                          >
+                            <Text style={styles.detailsMiniBtnText}>Voucher</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            style={[styles.detailsMiniBtn, { backgroundColor: '#fbdcd0' }]}
+                            onPress={() =>
+                              router.push({
+                                pathname: '/details',
+                                params: {
+                                  id: String(item.id),
+                                  title: item.title,
+                                  price: item.formatted_price,
+                                  image: item.image_key,
+                                },
+                              })
+                            }
+                          >
+                            <Text style={[styles.detailsMiniBtnText, { color: '#783616' }]}>Detalhes</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
           {/* TAB 2: Concluídas */}
-          {activeTab === 'concluidas' && (
+          {!loading && activeTab === 'concluidas' && (
             <View style={styles.tabContentGroup}>
-              <View style={styles.compactCard}>
-                <View style={styles.cardStatusRow}>
-                  <View style={styles.completedTag}>
-                    <Ionicons name="checkmark-done-outline" size={13} color="#6b5650" />
-                    <Text style={styles.completedTagText}>Concluído</Text>
-                  </View>
-                  <Text style={styles.completedDateText}>02 Out 2024</Text>
+              {concluidas.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Text style={{ color: QuixaColors.onSurfaceVariant, fontSize: 14 }}>
+                    Nenhuma reserva concluída ainda.
+                  </Text>
                 </View>
+              ) : (
+                concluidas.map((item) => (
+                  <View key={item.id} style={styles.compactCard}>
+                    <View style={styles.cardStatusRow}>
+                      <View style={styles.completedTag}>
+                        <Ionicons name="checkmark-done-outline" size={13} color="#6b5650" />
+                        <Text style={styles.completedTagText}>Concluído</Text>
+                      </View>
+                      <Text style={styles.completedDateText}>{item.date_label}</Text>
+                    </View>
 
-                <View style={styles.compactBodyRow}>
-                  <Image
-                    source={AppImages.chale}
-                    style={styles.compactThumb}
-                    resizeMode="cover"
-                  />
+                    <View style={styles.compactBodyRow}>
+                      <Image
+                        source={getImageSource(item.image_key)}
+                        style={styles.compactThumb}
+                        resizeMode="cover"
+                      />
 
-                  <View style={styles.compactInfoCol}>
-                    <Text style={styles.compactTitle}>
-                      Chalé Vista dos Monólitos ao Pôr do Sol
-                    </Text>
-                    <Text style={styles.completedMetaText}>
-                      Guia Clenilda Rocha • 2 Pessoas
-                    </Text>
-                    <Text style={styles.completedPriceText}>R$ 140,00</Text>
-                  </View>
-                </View>
+                      <View style={styles.compactInfoCol}>
+                        <Text style={styles.compactTitle}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.completedMetaText}>
+                          {item.guide?.name ? `Guia ${item.guide.name}` : 'Guia Local'} • {item.participants} {item.participants === 1 ? 'Pessoa' : 'Pessoas'}
+                        </Text>
+                        <Text style={styles.completedPriceText}>{item.formatted_price}</Text>
+                      </View>
+                    </View>
 
-                <View style={styles.compactFooterRow}>
-                  <View style={styles.starsRow}>
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <Ionicons key={s} name="star" size={16} color={QuixaColors.primary} />
-                    ))}
+                    <View style={styles.compactFooterRow}>
+                      <View style={styles.starsRow}>
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Ionicons
+                            key={s}
+                            name={s <= (item.rating || 5) ? 'star' : 'star-outline'}
+                            size={16}
+                            color={QuixaColors.primary}
+                          />
+                        ))}
+                      </View>
+                      <View style={styles.concluidasActionsRow}>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          style={styles.detailsMiniBtn}
+                          onPress={() => handleReceipt(item)}
+                        >
+                          <Text style={styles.detailsMiniBtnText}>Recibo</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={styles.avaliarBtn}
+                          onPress={() => handleReview(item)}
+                        >
+                          <Ionicons name="star" size={13} color="#ffffff" />
+                          <Text style={styles.avaliarBtnText}>Avaliar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   </View>
-                  <View style={styles.concluidasActionsRow}>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      style={styles.detailsMiniBtn}
-                      onPress={() => Alert.alert('Recibo', 'Recibo da reserva #QX-3901 baixado.')}
-                    >
-                      <Text style={styles.detailsMiniBtnText}>Recibo</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      style={styles.avaliarBtn}
-                      onPress={() => router.push('/avaliar' as any)}
-                    >
-                      <Ionicons name="star" size={13} color="#ffffff" />
-                      <Text style={styles.avaliarBtnText}>Avaliar</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
+                ))
+              )}
             </View>
           )}
         </View>
@@ -327,7 +473,9 @@ export default function ReservasScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.voucherCodeBig}>#QX-4892</Text>
+            <Text style={styles.voucherCodeBig}>
+              {selectedVoucher?.code || '#QX-4892'}
+            </Text>
 
             {/* Simulated QR Code Box */}
             <View style={styles.qrCodeBox}>
@@ -335,10 +483,10 @@ export default function ReservasScreen() {
             </View>
 
             <Text style={styles.voucherExpTitle}>
-              Trilha Galinha Choca & Açude do Cedro
+              {selectedVoucher?.title || 'Experiência QuixaTour'}
             </Text>
             <Text style={styles.voucherExpSub}>
-              Apresente este código ao Guia Zé na saída da trilha.
+              {selectedVoucher?.instructions || 'Apresente este código ao guia no local de partida.'}
             </Text>
 
             <TouchableOpacity
@@ -357,56 +505,52 @@ export default function ReservasScreen() {
         {/* Tab 1: Explorar */}
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.navBtn, navTab === 'explorar' && styles.navBtnActive]}
-          onPress={() => {
-            setNavTab('explorar');
-            router.replace('/explore');
-          }}
+          style={styles.navBtn}
+          onPress={() => router.replace('/explore')}
         >
           <Ionicons
-            name="compass"
+            name="compass-outline"
             size={24}
-            color={navTab === 'explorar' ? '#ffffff' : QuixaColors.secondary}
+            color={QuixaColors.secondary}
           />
         </TouchableOpacity>
 
         {/* Tab 2: Favoritos */}
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.navBtn, navTab === 'favoritos' && styles.navBtnActive]}
-          onPress={() => setNavTab('favoritos')}
+          style={styles.navBtn}
+          onPress={() => router.replace('/explore')}
         >
           <Ionicons
-            name={navTab === 'favoritos' ? 'heart' : 'heart-outline'}
+            name="heart-outline"
             size={24}
-            color={navTab === 'favoritos' ? '#ffffff' : QuixaColors.secondary}
+            color={QuixaColors.secondary}
           />
         </TouchableOpacity>
 
         {/* Tab 3: Notificações */}
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.navBtn, navTab === 'notificacoes' && styles.navBtnActive]}
-          onPress={() => setNavTab('notificacoes')}
+          style={styles.navBtn}
+          onPress={() => Alert.alert('Notificações', 'Você está com todas as reservas confirmadas!')}
         >
           <Ionicons
-            name={navTab === 'notificacoes' ? 'notifications' : 'notifications-outline'}
+            name="notifications-outline"
             size={24}
-            color={navTab === 'notificacoes' ? '#ffffff' : QuixaColors.secondary}
+            color={QuixaColors.secondary}
           />
         </TouchableOpacity>
 
         {/* Tab 4: Ticket / Minhas Reservas (Ativo) */}
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.navBtn, navTab === 'reservas' && styles.navBtnActive]}
-          onPress={() => setNavTab('reservas')}
+          style={[styles.navBtn, styles.navBtnActive]}
           accessibilityLabel="Minhas Reservas"
         >
           <Ionicons
-            name={navTab === 'reservas' ? 'ticket' : 'ticket-outline'}
+            name="ticket"
             size={24}
-            color={navTab === 'reservas' ? '#ffffff' : QuixaColors.secondary}
+            color="#ffffff"
           />
         </TouchableOpacity>
       </View>
@@ -418,50 +562,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: QuixaColors.background,
-  },
-  header: {
-    height: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(255, 248, 246, 0.9)',
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  logoBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-  },
-  brandTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: QuixaColors.onSurface,
-    letterSpacing: -0.5,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#fce5dc',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   scrollContent: {
     paddingBottom: 90,

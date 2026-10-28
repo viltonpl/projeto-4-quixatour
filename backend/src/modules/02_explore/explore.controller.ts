@@ -7,8 +7,9 @@ export class ExploreController {
       const userId = Number(req.query.userId) || 1;
       const category = (req.query.category as string) || 'Todos';
       const search = (req.query.search as string) || '';
+      const sortBy = (req.query.sortBy as string) || '';
 
-      const data = ExploreService.getExploreData(userId, category, search);
+      const data = ExploreService.getExploreData(userId, category, search, sortBy);
       return res.status(200).json({ success: true, data });
     } catch (error) {
       console.error('Erro ao buscar dados do Explorar:', error);

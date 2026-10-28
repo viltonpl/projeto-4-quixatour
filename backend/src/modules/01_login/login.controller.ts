@@ -64,4 +64,20 @@ export class LoginController {
       return res.status(500).json({ success: false, message: 'Erro ao buscar perfil.' });
     }
   }
+
+  static updateProfile(req: Request, res: Response) {
+    try {
+      const userId = Number(req.body.userId) || 1;
+      const { name, email, cpf, nationality, phone } = req.body;
+      const updated = LoginService.updateProfile(userId, { name, email, cpf, nationality, phone });
+      return res.status(200).json({
+        success: true,
+        message: 'Perfil atualizado com sucesso!',
+        data: updated
+      });
+    } catch (error: any) {
+      console.error('Erro ao atualizar perfil:', error);
+      return res.status(500).json({ success: false, message: error.message || 'Erro ao atualizar perfil.' });
+    }
+  }
 }

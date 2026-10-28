@@ -18,25 +18,47 @@ import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
 import { ExploreService, ExperienceItem } from '@/services/exploreService';
 
-type Category = 'Todos' | 'Trilhas' | 'Aventura' | 'Chalés';
+import { Modal } from 'react-native';
+
+const FILTER_CATEGORIES = [
+  'Aventuras',
+  'Trilhas',
+  'Hospedagens',
+  'Restaurantes',
+  'Comidas',
+  'Lazeres',
+];
 
 export default function ExploreScreen() {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
+  const [selectedSort, setSelectedSort] = useState<'none' | 'cheapest' | 'expensive'>('none');
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [tempSort, setTempSort] = useState<'none' | 'cheapest' | 'expensive'>('none');
+  const [tempCategory, setTempCategory] = useState<string>('Todos');
+
   const [favorites, setFavorites] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState<'explorar' | 'favoritos' | 'notificacoes' | 'reservas'>('explorar');
   const [searchQuery, setSearchQuery] = useState('');
   const [userName, setUserName] = useState('Maria');
   const [greeting, setGreeting] = useState('Olá, Maria!');
   const [subtitle, setSubtitle] = useState('O que vamos explorar em Quixadá hoje?');
-  const [categories, setCategories] = useState<string[]>(['Todos', 'Trilhas', 'Aventura', 'Chalés']);
+  const [categories, setCategories] = useState<string[]>([
+    'Todos',
+    'Aventuras',
+    'Trilhas',
+    'Hospedagens',
+    'Restaurantes',
+    'Comidas',
+    'Lazeres',
+  ]);
   const [experiences, setExperiences] = useState<ExperienceItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const fetchExplore = useCallback(async (cat: string, search: string) => {
+  const fetchExplore = useCallback(async (cat: string, search: string, sort: string) => {
     try {
       setLoading(true);
-      const data = await ExploreService.getExploreData(cat, search);
+      const data = await ExploreService.getExploreData(cat, search, sort === 'none' ? '' : sort);
       setUserName(data.userName || 'Maria');
       setGreeting(data.greeting || 'Olá, Maria!');
       setSubtitle(data.subtitle || 'O que vamos explorar em Quixadá hoje?');
@@ -58,8 +80,8 @@ export default function ExploreScreen() {
   }, []);
 
   useEffect(() => {
-    fetchExplore(selectedCategory, searchQuery);
-  }, [selectedCategory, searchQuery, fetchExplore]);
+    fetchExplore(selectedCategory, searchQuery, selectedSort);
+  }, [selectedCategory, searchQuery, selectedSort, fetchExplore]);
 
   const toggleFavorite = async (id: number) => {
     const key = `card${id}`;
@@ -76,18 +98,27 @@ export default function ExploreScreen() {
   };
 
   const handleProfilePress = () => {
-    Alert.alert(
-      'Perfil de Usuário',
-      `Conectado como: ${userName}\nDeseja sair do aplicativo e retornar ao login?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sair da Conta',
-          style: 'destructive',
-          onPress: () => router.replace('/'),
-        },
-      ]
-    );
+    router.push('/profile');
+  };
+
+  const handleOpenFilter = () => {
+    setTempSort(selectedSort);
+    setTempCategory(selectedCategory);
+    setShowFilterModal(true);
+  };
+
+  const handleApplyFilter = () => {
+    setSelectedSort(tempSort);
+    setSelectedCategory(tempCategory);
+    setShowFilterModal(false);
+  };
+
+  const handleClearFilter = () => {
+    setTempSort('none');
+    setTempCategory('Todos');
+    setSelectedSort('none');
+    setSelectedCategory('Todos');
+    setShowFilterModal(false);
   };
 
   const getImageSource = (key: string) => {
@@ -149,10 +180,65 @@ export default function ExploreScreen() {
                 onChangeText={setSearchQuery}
               />
             </View>
-            <TouchableOpacity activeOpacity={0.85} style={styles.filterBtn}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.filterBtn,
+                (selectedSort !== 'none' || selectedCategory !== 'Todos') && styles.filterBtnActive,
+              ]}
+              onPress={handleOpenFilter}
+              accessibilityLabel="Filtros e ordenação"
+            >
               <Ionicons name="options-outline" size={22} color="#ffffff" />
+              {(selectedSort !== 'none' || selectedCategory !== 'Todos') && (
+                <View style={styles.filterBadgeDot} />
+              )}
             </TouchableOpacity>
           </View>
+
+          {/* Active Filter Badges */}
+          {(selectedSort !== 'none' || selectedCategory !== 'Todos') && (
+            <View style={styles.activeFiltersRow}>
+              {selectedSort !== 'none' && (
+                <View style={styles.activeFilterPill}>
+                  <Ionicons
+                    name={selectedSort === 'cheapest' ? 'trending-down' : 'trending-up'}
+                    size={14}
+                    color={QuixaColors.primary}
+                  />
+                  <Text style={styles.activeFilterPillText}>
+                    {selectedSort === 'cheapest' ? 'Mais barato' : 'Mais caro'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setSelectedSort('none')}
+                    style={styles.activeFilterClose}
+                  >
+                    <Ionicons name="close-circle" size={16} color={QuixaColors.primary} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {selectedCategory !== 'Todos' && (
+                <View style={styles.activeFilterPill}>
+                  <Ionicons name="funnel-outline" size={14} color={QuixaColors.primary} />
+                  <Text style={styles.activeFilterPillText}>{selectedCategory}</Text>
+                  <TouchableOpacity
+                    onPress={() => setSelectedCategory('Todos')}
+                    style={styles.activeFilterClose}
+                  >
+                    <Ionicons name="close-circle" size={16} color={QuixaColors.primary} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <TouchableOpacity
+                onPress={handleClearFilter}
+                style={styles.clearAllBtn}
+              >
+                <Text style={styles.clearAllText}>Limpar</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* 3. Horizontal Category Chips */}
           <ScrollView
@@ -331,6 +417,162 @@ export default function ExploreScreen() {
           />
         </TouchableOpacity>
       </View>
+
+      {/* Modal de Filtros Funcional */}
+      <Modal
+        visible={showFilterModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowFilterModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.filterModalCard}>
+            {/* Modal Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={styles.modalHeaderTitleGroup}>
+                <Ionicons name="options" size={22} color={QuixaColors.primary} />
+                <Text style={styles.modalHeaderTitle}>Filtros de Passeios</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowFilterModal(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={22} color={QuixaColors.onSurface} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.filterModalScroll}>
+              {/* Seção 1: Ordenar por Preço */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterSectionTitle}>ORDENAR POR PREÇO</Text>
+                <View style={styles.filterOptionsGrid}>
+                  {/* Mais barato */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[
+                      styles.filterSelectBtn,
+                      tempSort === 'cheapest' && styles.filterSelectBtnActive,
+                    ]}
+                    onPress={() =>
+                      setTempSort((prev) => (prev === 'cheapest' ? 'none' : 'cheapest'))
+                    }
+                  >
+                    <Ionicons
+                      name="arrow-down-circle-outline"
+                      size={18}
+                      color={tempSort === 'cheapest' ? '#ffffff' : QuixaColors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.filterSelectBtnText,
+                        tempSort === 'cheapest' && styles.filterSelectBtnTextActive,
+                      ]}
+                    >
+                      Mais barato
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Mais caro */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={[
+                      styles.filterSelectBtn,
+                      tempSort === 'expensive' && styles.filterSelectBtnActive,
+                    ]}
+                    onPress={() =>
+                      setTempSort((prev) => (prev === 'expensive' ? 'none' : 'expensive'))
+                    }
+                  >
+                    <Ionicons
+                      name="arrow-up-circle-outline"
+                      size={18}
+                      color={tempSort === 'expensive' ? '#ffffff' : QuixaColors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.filterSelectBtnText,
+                        tempSort === 'expensive' && styles.filterSelectBtnTextActive,
+                      ]}
+                    >
+                      Mais caro
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Seção 2: Categorias */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterSectionTitle}>CATEGORIAS & ATRAÇÕES</Text>
+                <View style={styles.filterCategoryWrap}>
+                  {FILTER_CATEGORIES.map((cat) => {
+                    const isSelected = tempCategory.toLowerCase() === cat.toLowerCase();
+                    return (
+                      <TouchableOpacity
+                        key={cat}
+                        activeOpacity={0.8}
+                        style={[
+                          styles.categoryChoiceChip,
+                          isSelected && styles.categoryChoiceChipActive,
+                        ]}
+                        onPress={() =>
+                          setTempCategory((prev) =>
+                            prev.toLowerCase() === cat.toLowerCase() ? 'Todos' : cat
+                          )
+                        }
+                      >
+                        <Ionicons
+                          name={
+                            cat === 'Aventuras'
+                              ? 'airplane-outline'
+                              : cat === 'Trilhas'
+                              ? 'footsteps-outline'
+                              : cat === 'Hospedagens'
+                              ? 'bed-outline'
+                              : cat === 'Restaurantes'
+                              ? 'restaurant-outline'
+                              : cat === 'Comidas'
+                              ? 'cafe-outline'
+                              : 'sparkles-outline'
+                          }
+                          size={16}
+                          color={isSelected ? '#ffffff' : QuixaColors.onSurface}
+                        />
+                        <Text
+                          style={[
+                            styles.categoryChoiceChipText,
+                            isSelected && styles.categoryChoiceChipTextActive,
+                          ]}
+                        >
+                          {cat}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Modal Actions */}
+            <View style={styles.modalActionButtons}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.modalClearBtn}
+                onPress={handleClearFilter}
+              >
+                <Text style={styles.modalClearBtnText}>Limpar Tudo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.88}
+                style={styles.modalApplyBtn}
+                onPress={handleApplyFilter}
+              >
+                <Text style={styles.modalApplyBtnText}>Aplicar Filtros</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -631,5 +873,196 @@ const styles = StyleSheet.create({
   },
   navBtnActive: {
     backgroundColor: QuixaColors.primary,
+  },
+  filterBtnActive: {
+    backgroundColor: QuixaColors.primaryContainer,
+  },
+  filterBadgeDot: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: QuixaColors.primary,
+  },
+  activeFiltersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: -4,
+  },
+  activeFilterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fdeae5',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#fbdcd0',
+  },
+  activeFilterPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: QuixaColors.primary,
+  },
+  activeFilterClose: {
+    marginLeft: 2,
+  },
+  clearAllBtn: {
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  clearAllText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: QuixaColors.secondary,
+    textDecorationLine: 'underline',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  filterModalCard: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 20,
+    maxHeight: '80%',
+    gap: 16,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5ded5',
+  },
+  modalHeaderTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: QuixaColors.onSurface,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  filterModalScroll: {
+    maxHeight: 380,
+  },
+  filterSection: {
+    marginBottom: 16,
+    gap: 10,
+  },
+  filterSectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: QuixaColors.secondary,
+    letterSpacing: 0.5,
+  },
+  filterOptionsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  filterSelectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fdeae5',
+    borderWidth: 1,
+    borderColor: '#fbdcd0',
+  },
+  filterSelectBtnActive: {
+    backgroundColor: QuixaColors.primary,
+    borderColor: QuixaColors.primary,
+  },
+  filterSelectBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: QuixaColors.onSurface,
+  },
+  filterSelectBtnTextActive: {
+    color: '#ffffff',
+  },
+  filterCategoryWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryChoiceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#fbf5f3',
+    borderWidth: 1,
+    borderColor: '#f1dfd9',
+  },
+  categoryChoiceChipActive: {
+    backgroundColor: QuixaColors.primary,
+    borderColor: QuixaColors.primary,
+  },
+  categoryChoiceChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: QuixaColors.onSurface,
+  },
+  categoryChoiceChipTextActive: {
+    color: '#ffffff',
+  },
+  modalActionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f5ded5',
+  },
+  modalClearBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#fdeae5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalClearBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: QuixaColors.primary,
+  },
+  modalApplyBtn: {
+    flex: 2,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: QuixaColors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: QuixaColors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  modalApplyBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

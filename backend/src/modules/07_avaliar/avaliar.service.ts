@@ -67,12 +67,15 @@ export class AvaliarService {
     const experienceId = data.experienceId || res.experience_id || 1;
     const guideId = data.guideId || res.guide_id || 1;
 
+    // Remove avaliações anteriores da mesma reserva para garantir 1 avaliação única e atualizada
+    db.prepare('DELETE FROM reviews WHERE reservation_id = ?').run(reservationId);
+
     const stmt = db.prepare(`
       INSERT INTO reviews (reservation_id, experience_id, user_id, guide_id, rating, rating_label, comment)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-
     const result = stmt.run(reservationId, experienceId, userId, guideId, rating, label, (data.comment || '').trim());
+    const reviewId = Number(result.lastInsertRowid);
 
     // Atualiza a média de avaliação da experiência no banco
     const avgData = db.prepare('SELECT AVG(rating) as avg_rating, COUNT(*) as count FROM reviews WHERE experience_id = ?')
@@ -85,7 +88,7 @@ export class AvaliarService {
     }
 
     return {
-      id: result.lastInsertRowid,
+      id: reviewId,
       rating,
       rating_label: label,
       comment: data.comment

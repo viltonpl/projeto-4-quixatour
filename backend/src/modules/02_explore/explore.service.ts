@@ -22,13 +22,21 @@ export interface ExperienceDTO {
 }
 
 export class ExploreService {
-  static getExploreData(userId: number = 1, category: string = 'Todos', search: string = '') {
+  static getExploreData(userId: number = 1, category: string = 'Todos', search: string = '', sortBy: string = '') {
     // 1. Dados do usuário logado para a saudação
     const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as { name: string } | undefined;
     const userName = user?.name || 'Maria';
 
-    // 2. Lista de categorias
-    const categories = (db.prepare('SELECT name FROM categories').all() as { name: string }[]).map(c => c.name);
+    // 2. Lista de categorias solicitadas para os filtros
+    const filterCategories = [
+      'Todos',
+      'Aventuras',
+      'Trilhas',
+      'Hospedagens',
+      'Restaurantes',
+      'Comidas',
+      'Lazeres'
+    ];
 
     // 3. Consulta de experiências com status de favorito do usuário
     let query = `
@@ -44,8 +52,15 @@ export class ExploreService {
     const params: any[] = [userId];
 
     if (category && category !== 'Todos') {
-      query += ` AND LOWER(e.category_name) = LOWER(?)`;
-      params.push(category);
+      const lower = category.toLowerCase().trim();
+      if (lower === 'aventuras' || lower === 'aventura') {
+        query += ` AND (LOWER(e.category_name) = 'aventuras' OR LOWER(e.category_name) = 'aventura')`;
+      } else if (lower === 'hospedagens' || lower === 'chalés' || lower === 'chales') {
+        query += ` AND (LOWER(e.category_name) = 'hospedagens' OR LOWER(e.category_name) = 'chalés' OR LOWER(e.category_name) = 'chales')`;
+      } else {
+        query += ` AND LOWER(e.category_name) = LOWER(?)`;
+        params.push(category);
+      }
     }
 
     if (search && search.trim() !== '') {
@@ -54,7 +69,15 @@ export class ExploreService {
       params.push(term, term, term);
     }
 
-    query += ` ORDER BY e.id ASC`;
+    // Ordenação por preço ou padrão
+    const sort = (sortBy || '').toLowerCase();
+    if (sort === 'cheapest' || sort === 'mais_barato' || sort === 'mais barato') {
+      query += ` ORDER BY e.price ASC`;
+    } else if (sort === 'expensive' || sort === 'mais_caro' || sort === 'mais caro') {
+      query += ` ORDER BY e.price DESC`;
+    } else {
+      query += ` ORDER BY e.id ASC`;
+    }
 
     const rawExperiences = db.prepare(query).all(...params) as any[];
 
@@ -83,7 +106,7 @@ export class ExploreService {
       userName,
       greeting: `Olá, ${userName}!`,
       subtitle: 'O que vamos explorar em Quixadá hoje?',
-      categories,
+      categories: filterCategories,
       experiences
     };
   }

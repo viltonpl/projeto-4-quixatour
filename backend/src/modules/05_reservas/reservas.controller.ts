@@ -34,4 +34,25 @@ export class ReservasController {
       return res.status(404).json({ success: false, message: error.message || 'Erro ao emitir recibo.' });
     }
   }
+
+  static cancelReservation(req: Request, res: Response) {
+    try {
+      const idParam = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const userId = Number(req.body.userId) || 1;
+      const reason = req.body.reason || '';
+
+      const result = ReservasService.cancelReservation(idParam, userId, reason);
+      return res.status(200).json({
+        success: true,
+        message: 'Reserva cancelada com sucesso! O reembolso foi agendado.',
+        data: result
+      });
+    } catch (error: any) {
+      console.error('Erro ao cancelar reserva:', error);
+      return res.status(400).json({
+        success: false,
+        message: error.message || 'Erro ao cancelar reserva.'
+      });
+    }
+  }
 }

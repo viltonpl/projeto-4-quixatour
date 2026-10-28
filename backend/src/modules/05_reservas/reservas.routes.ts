@@ -7,5 +7,6 @@ const router = Router();
 router.get('/', ReservasController.getReservations);
 router.get('/:id/voucher', ReservasController.getVoucher);
 router.get('/:id/receipt', ReservasController.getReceipt);
+router.post('/:id/cancel', ReservasController.cancelReservation);
 
 export default router;

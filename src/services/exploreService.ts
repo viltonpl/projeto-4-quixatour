@@ -30,9 +30,9 @@ export interface ExploreDataResponse {
 }
 
 export class ExploreService {
-  static async getExploreData(category: string = 'Todos', search: string = ''): Promise<ExploreDataResponse> {
+  static async getExploreData(category: string = 'Todos', search: string = '', sortBy: string = ''): Promise<ExploreDataResponse> {
     try {
-      const endpoint = `/explore?category=${encodeURIComponent(category)}&search=${encodeURIComponent(search)}`;
+      const endpoint = `/explore?category=${encodeURIComponent(category)}&search=${encodeURIComponent(search)}&sortBy=${encodeURIComponent(sortBy)}`;
       const res = await api.get(endpoint);
       if (res.success && res.data) {
         return res.data;

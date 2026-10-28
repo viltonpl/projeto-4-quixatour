@@ -12,7 +12,10 @@ export class ReservasService {
         g.name as guide_name,
         g.role as guide_role,
         g.avatar as guide_avatar,
-        (SELECT rw.rating FROM reviews rw WHERE rw.reservation_id = r.id) as user_review_rating
+        (SELECT rw.rating FROM reviews rw WHERE rw.reservation_id = r.id ORDER BY rw.id DESC LIMIT 1) as user_review_rating,
+        (SELECT rw.comment FROM reviews rw WHERE rw.reservation_id = r.id ORDER BY rw.id DESC LIMIT 1) as user_review_comment,
+        (SELECT rw.rating_label FROM reviews rw WHERE rw.reservation_id = r.id ORDER BY rw.id DESC LIMIT 1) as user_review_label,
+        (SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END FROM reviews rw WHERE rw.reservation_id = r.id) as is_reviewed
       FROM reservations r
       LEFT JOIN experiences e ON r.experience_id = e.id
       LEFT JOIN guides g ON r.guide_id = g.id
@@ -55,7 +58,10 @@ export class ReservasService {
         total: r.total,
         formatted_price: `R$ ${r.total.toFixed(2).replace('.', ',')}`,
         image_key: r.experience_image_key || 'chale',
-        rating: r.user_review_rating || 5,
+        rating: r.user_review_rating || 0,
+        review_comment: r.user_review_comment || '',
+        review_label: r.user_review_label || '',
+        is_reviewed: Boolean(r.is_reviewed),
         guide: {
           id: r.guide_id,
           name: r.guide_name || 'Guia Clenilda Rocha',
@@ -124,6 +130,49 @@ export class ReservasService {
       total: res.total,
       payment_method: res.payment_method === 'pix' ? 'Pix (com 5% de desconto)' : 'Cartão de Crédito',
       status: 'Pago e Confirmado'
+    };
+  }
+
+  static cancelReservation(reservationId: number | string, userId: number = 1, reason: string = '') {
+    const isCode = String(reservationId).startsWith('#');
+    let res: any;
+    if (isCode) {
+      res = db.prepare('SELECT * FROM reservations WHERE reservation_code = ? AND user_id = ?').get(reservationId, userId);
+    } else {
+      res = db.prepare('SELECT * FROM reservations WHERE id = ? AND user_id = ?').get(Number(reservationId), userId);
+    }
+
+    if (!res) {
+      throw new Error('Reserva não encontrada.');
+    }
+
+    if (res.status === 'canceladas') {
+      throw new Error('Esta reserva já foi cancelada anteriormente.');
+    }
+
+    const refundAmount = res.total;
+    const refundStatus = 'Reembolso aprovado (estorno integral em até 3 a 5 dias úteis)';
+
+    db.prepare(`
+      UPDATE reservations
+      SET status = 'canceladas',
+          cancellation_reason = ?,
+          refund_amount = ?,
+          refund_status = ?,
+          cancelled_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(reason || 'Solicitação de cancelamento pelo usuário', refundAmount, refundStatus, res.id);
+
+    return {
+      id: res.id,
+      reservation_code: res.reservation_code,
+      title: res.title,
+      status: 'canceladas',
+      cancellation_reason: reason,
+      refund_amount: refundAmount,
+      formatted_refund: `R$ ${refundAmount.toFixed(2).replace('.', ',')}`,
+      refund_status: refundStatus,
+      refund_timeframe: 'Prazo: 3 a 5 dias úteis (Pix estornado em até 2 horas úteis)'
     };
   }
 }

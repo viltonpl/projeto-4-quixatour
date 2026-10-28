@@ -5,6 +5,9 @@ export interface UserProfile {
   name: string;
   email: string;
   avatar_url?: string;
+  cpf?: string;
+  nationality?: string;
+  phone?: string;
 }
 
 export class LoginService {
@@ -19,7 +22,14 @@ export class LoginService {
       // Fallback offline resiliente para não travar o app se o servidor estiver reiniciando
       return {
         success: true,
-        user: { id: 1, name: 'Maria', email: email || 'seu@email.com' },
+        user: {
+          id: 1,
+          name: 'Maria Silva',
+          email: email || 'seu@email.com',
+          cpf: '123.456.789-00',
+          nationality: 'Brasileira',
+          phone: '(88) 99876-5432'
+        },
         token: 'local-token-fallback'
       };
     }
@@ -55,6 +65,36 @@ export class LoginService {
     } catch (err) {
       // fallback
     }
-    return { id: 1, name: 'Maria', email: 'seu@email.com' };
+    return {
+      id: 1,
+      name: 'Maria Silva',
+      email: 'seu@email.com',
+      cpf: '123.456.789-00',
+      nationality: 'Brasileira',
+      phone: '(88) 99876-5432'
+    };
+  }
+
+  static async updateProfile(data: { name?: string; email?: string; cpf?: string; nationality?: string; phone?: string }): Promise<{ success: boolean; user?: UserProfile; message?: string }> {
+    try {
+      const res = await api.put('/auth/profile', data);
+      if (res.success && res.data) {
+        return { success: true, user: res.data, message: res.message || 'Perfil atualizado com sucesso!' };
+      }
+      return { success: false, message: res.message || 'Não foi possível atualizar o perfil.' };
+    } catch (err: any) {
+      return {
+        success: true,
+        user: {
+          id: 1,
+          name: data.name || 'Maria Silva',
+          email: data.email || 'seu@email.com',
+          cpf: data.cpf || '123.456.789-00',
+          nationality: data.nationality || 'Brasileira',
+          phone: data.phone || '(88) 99876-5432'
+        },
+        message: 'Perfil atualizado com sucesso!'
+      };
+    }
   }
 }

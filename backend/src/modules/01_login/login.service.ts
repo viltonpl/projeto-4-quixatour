@@ -5,6 +5,9 @@ export interface User {
   name: string;
   email: string;
   avatar_url?: string;
+  cpf?: string;
+  nationality?: string;
+  phone?: string;
   created_at: string;
 }
 
@@ -41,6 +44,9 @@ export class LoginService {
         name: user.name,
         email: user.email,
         avatar_url: user.avatar_url,
+        cpf: user.cpf || '123.456.789-00',
+        nationality: user.nationality || 'Brasileira',
+        phone: user.phone || '(88) 99876-5432',
         created_at: user.created_at,
       },
       token: `quixa-token-${user.id}-${Date.now()}`
@@ -58,10 +64,10 @@ export class LoginService {
       return { success: false, error: 'Este e-mail já está cadastrado.' };
     }
 
-    const result = db.prepare('INSERT INTO users (name, email, password) VALUES (?, ?, ?)')
-      .run(name.trim(), trimmedEmail, password);
+    const result = db.prepare('INSERT INTO users (name, email, password, cpf, nationality, phone) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(name.trim(), trimmedEmail, password, '123.456.789-00', 'Brasileira', '(88) 99876-5432');
 
-    const newUser = db.prepare('SELECT id, name, email, avatar_url, created_at FROM users WHERE id = ?')
+    const newUser = db.prepare('SELECT id, name, email, avatar_url, cpf, nationality, phone, created_at FROM users WHERE id = ?')
       .get(result.lastInsertRowid) as User;
 
     return { success: true, user: newUser };
@@ -75,8 +81,29 @@ export class LoginService {
   }
 
   static getCurrentUser(userId: number = 1): User | null {
-    const user = db.prepare('SELECT id, name, email, avatar_url, created_at FROM users WHERE id = ?')
+    const user = db.prepare('SELECT id, name, email, avatar_url, cpf, nationality, phone, created_at FROM users WHERE id = ?')
       .get(userId) as User | undefined;
     return user || null;
+  }
+
+  static updateProfile(userId: number = 1, data: { name?: string; email?: string; cpf?: string; nationality?: string; phone?: string }): User {
+    const current = LoginService.getCurrentUser(userId);
+    if (!current) {
+      throw new Error('Usuário não encontrado.');
+    }
+
+    const updatedName = data.name !== undefined ? data.name.trim() : current.name;
+    const updatedEmail = data.email !== undefined ? data.email.trim().toLowerCase() : current.email;
+    const updatedCpf = data.cpf !== undefined ? data.cpf.trim() : (current.cpf || '123.456.789-00');
+    const updatedNationality = data.nationality !== undefined ? data.nationality.trim() : (current.nationality || 'Brasileira');
+    const updatedPhone = data.phone !== undefined ? data.phone.trim() : (current.phone || '(88) 99876-5432');
+
+    db.prepare(`
+      UPDATE users
+      SET name = ?, email = ?, cpf = ?, nationality = ?, phone = ?
+      WHERE id = ?
+    `).run(updatedName, updatedEmail, updatedCpf, updatedNationality, updatedPhone, userId);
+
+    return LoginService.getCurrentUser(userId)!;
   }
 }

@@ -154,9 +154,14 @@ export default function CheckoutScreen() {
 
         <Text style={styles.headerTitle}>Pagamento</Text>
 
-        <View style={styles.profileBadge}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={styles.profileBadge}
+          onPress={() => router.push('/profile')}
+          accessibilityLabel="Meu Perfil"
+        >
           <Ionicons name="person" size={18} color={QuixaColors.primary} />
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Toast Feedback */}

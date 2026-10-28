@@ -4,6 +4,7 @@ import {
   Text,
   View,
   TouchableOpacity,
+  TextInput,
   Image,
   ScrollView,
   StatusBar,
@@ -11,13 +12,22 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
 import { ReservasService, ReservationItem } from '@/services/reservasService';
+
+const CANCEL_REASONS = [
+  'Mudança de planos ou datas',
+  'Imprevisto pessoal ou de saúde',
+  'Problemas com clima no dia',
+  'Dificuldade de transporte até Quixadá',
+  'Outro motivo',
+];
 
 export default function ReservasScreen() {
   const router = useRouter();
@@ -36,8 +46,17 @@ export default function ReservasScreen() {
   const [concluidas, setConcluidas] = useState<ReservationItem[]>([]);
   const [counts, setCounts] = useState({ proximas: 0, concluidas: 0 });
 
+  // Cancelamento states
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedCancelItem, setSelectedCancelItem] = useState<ReservationItem | null>(null);
+  const [selectedReasonOption, setSelectedReasonOption] = useState<string>(CANCEL_REASONS[0]);
+  const [customReasonText, setCustomReasonText] = useState<string>('');
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelSuccessData, setCancelSuccessData] = useState<any | null>(null);
+
   const loadReservations = useCallback(async () => {
     try {
+      setLoading(true);
       const data = await ReservasService.getReservations();
       if (data) {
         setProximas(data.proximas || []);
@@ -55,9 +74,51 @@ export default function ReservasScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadReservations();
-  }, [loadReservations]);
+  // Recarrega sempre que a tela de reservas entra em foco (ex: após voltar de /avaliar)
+  useFocusEffect(
+    useCallback(() => {
+      loadReservations();
+    }, [loadReservations])
+  );
+
+  const handleOpenCancelModal = (item: ReservationItem) => {
+    setSelectedCancelItem(item);
+    setSelectedReasonOption(CANCEL_REASONS[0]);
+    setCustomReasonText('');
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!selectedCancelItem) return;
+
+    const fullReason = customReasonText.trim()
+      ? `${selectedReasonOption} - ${customReasonText.trim()}`
+      : selectedReasonOption;
+
+    try {
+      setCancelling(true);
+      const res = await ReservasService.cancelReservation(
+        selectedCancelItem.reservation_code || selectedCancelItem.id,
+        fullReason
+      );
+
+      setShowCancelModal(false);
+      setCancelSuccessData({
+        item: selectedCancelItem,
+        refundAmount: selectedCancelItem.total,
+        formattedRefund: selectedCancelItem.formatted_price,
+        timeframe: 'Reembolso em 3 a 5 dias úteis (Pix estornado em até 2h úteis)',
+      });
+
+      // Recarrega a lista de reservas imediatamente
+      await loadReservations();
+    } catch (err: any) {
+      console.warn('Erro ao cancelar reserva:', err);
+      Alert.alert('Erro', 'Não foi possível cancelar a reserva no momento.');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -143,9 +204,19 @@ export default function ReservasScreen() {
           {/* Screen Title Bar */}
           <View style={styles.titleRow}>
             <Text style={styles.screenTitle}>Minhas Reservas</Text>
-            <TouchableOpacity activeOpacity={0.8} style={styles.ticketBtn}>
-              <Ionicons name="ticket-outline" size={22} color="#a34b1d" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.ticketBtn}
+                onPress={() => router.push('/profile')}
+                accessibilityLabel="Meu Perfil"
+              >
+                <Ionicons name="person-outline" size={20} color="#a34b1d" />
+              </TouchableOpacity>
+              <View style={styles.ticketBtn}>
+                <Ionicons name="ticket-outline" size={20} color="#a34b1d" />
+              </View>
+            </View>
           </View>
 
           {/* Segmented Tabs Filter */}
@@ -284,15 +355,26 @@ export default function ReservasScreen() {
                     </TouchableOpacity>
                   </View>
 
-                  {/* Primary Action Button: Ver Voucher */}
-                  <TouchableOpacity
-                    activeOpacity={0.88}
-                    style={styles.voucherBtn}
-                    onPress={() => handleOpenVoucher(heroItem)}
-                  >
-                    <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
-                    <Text style={styles.voucherBtnText}>Ver Voucher</Text>
-                  </TouchableOpacity>
+                  {/* Hero Action Buttons: Ver Voucher & Cancelar Compra */}
+                  <View style={styles.heroActionButtonsCol}>
+                    <TouchableOpacity
+                      activeOpacity={0.88}
+                      style={styles.voucherBtn}
+                      onPress={() => handleOpenVoucher(heroItem)}
+                    >
+                      <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
+                      <Text style={styles.voucherBtnText}>Ver Voucher</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.cancelBookingHeroBtn}
+                      onPress={() => handleOpenCancelModal(heroItem)}
+                    >
+                      <Ionicons name="close-circle-outline" size={18} color={QuixaColors.error} />
+                      <Text style={styles.cancelBookingHeroBtnText}>Cancelar Compra</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
                 <View style={{ padding: 24, alignItems: 'center' }}>
@@ -348,6 +430,13 @@ export default function ReservasScreen() {
                         <View style={styles.concluidasActionsRow}>
                           <TouchableOpacity
                             activeOpacity={0.8}
+                            style={styles.cancelMiniBtn}
+                            onPress={() => handleOpenCancelModal(item)}
+                          >
+                            <Text style={styles.cancelMiniBtnText}>Cancelar</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
                             style={styles.detailsMiniBtn}
                             onPress={() => handleOpenVoucher(item)}
                           >
@@ -389,65 +478,116 @@ export default function ReservasScreen() {
                   </Text>
                 </View>
               ) : (
-                concluidas.map((item) => (
-                  <View key={item.id} style={styles.compactCard}>
-                    <View style={styles.cardStatusRow}>
-                      <View style={styles.completedTag}>
-                        <Ionicons name="checkmark-done-outline" size={13} color="#6b5650" />
-                        <Text style={styles.completedTagText}>Concluído</Text>
-                      </View>
-                      <Text style={styles.completedDateText}>{item.date_label}</Text>
-                    </View>
+                concluidas.map((item) => {
+                  const hasReview = Boolean(item.is_reviewed || (item.rating && item.rating > 0));
+                  const ratingValue = item.rating || 0;
 
-                    <View style={styles.compactBodyRow}>
-                      <Image
-                        source={getImageSource(item.image_key)}
-                        style={styles.compactThumb}
-                        resizeMode="cover"
-                      />
+                  return (
+                    <View key={item.id} style={styles.compactCard}>
+                      <View style={styles.cardStatusRow}>
+                        <View style={styles.completedTag}>
+                          <Ionicons name="checkmark-done-outline" size={13} color="#6b5650" />
+                          <Text style={styles.completedTagText}>Concluído</Text>
+                        </View>
+                        <Text style={styles.completedDateText}>{item.date_label}</Text>
+                      </View>
 
-                      <View style={styles.compactInfoCol}>
-                        <Text style={styles.compactTitle}>
-                          {item.title}
-                        </Text>
-                        <Text style={styles.completedMetaText}>
-                          {item.guide?.name ? `Guia ${item.guide.name}` : 'Guia Local'} • {item.participants} {item.participants === 1 ? 'Pessoa' : 'Pessoas'}
-                        </Text>
-                        <Text style={styles.completedPriceText}>{item.formatted_price}</Text>
+                      <View style={styles.compactBodyRow}>
+                        <Image
+                          source={getImageSource(item.image_key)}
+                          style={styles.compactThumb}
+                          resizeMode="cover"
+                        />
+
+                        <View style={styles.compactInfoCol}>
+                          <Text style={styles.compactTitle}>
+                            {item.title}
+                          </Text>
+                          <Text style={styles.completedMetaText}>
+                            {item.guide?.name ? `Guia ${item.guide.name}` : 'Guia Local'} • {item.participants} {item.participants === 1 ? 'Pessoa' : 'Pessoas'}
+                          </Text>
+                          <Text style={styles.completedPriceText}>{item.formatted_price}</Text>
+                        </View>
+                      </View>
+
+                      {/* Se a pessoa escreveu algo na avaliação, aparece na tela de concluído */}
+                      {item.review_comment && item.review_comment.trim() !== '' ? (
+                        <View style={styles.reviewCommentBox}>
+                          <Ionicons name="chatbubble-ellipses" size={16} color={QuixaColors.primary} />
+                          <Text style={styles.reviewCommentText}>
+                            “{item.review_comment}”
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      <View style={styles.compactFooterRow}>
+                        {/* Resposta visual sobre a avaliação (estrelas refletindo a nota do usuário) */}
+                        <View style={styles.starsRow}>
+                          {[1, 2, 3, 4, 5].map((s) => {
+                            const isFilled = hasReview ? s <= ratingValue : false;
+                            return (
+                              <TouchableOpacity
+                                key={s}
+                                activeOpacity={hasReview ? 1 : 0.7}
+                                disabled={hasReview}
+                                onPress={() => {
+                                  if (!hasReview) {
+                                    router.push({
+                                      pathname: '/avaliar',
+                                      params: {
+                                        reservationId: String(item.id),
+                                        experienceId: String(item.id),
+                                        title: item.title,
+                                        guideName: item.guide?.name || 'Guia Zé',
+                                        initialRating: String(s),
+                                      },
+                                    });
+                                  }
+                                }}
+                              >
+                                <Ionicons
+                                  name={isFilled ? 'star' : 'star-outline'}
+                                  size={18}
+                                  color={isFilled ? QuixaColors.primary : '#d6b8ad'}
+                                />
+                              </TouchableOpacity>
+                            );
+                          })}
+                          {hasReview && ratingValue > 0 && (
+                            <Text style={styles.ratingNumberBadge}>{ratingValue.toFixed(1)}</Text>
+                          )}
+                        </View>
+
+                        <View style={styles.concluidasActionsRow}>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            style={styles.detailsMiniBtn}
+                            onPress={() => handleReceipt(item)}
+                          >
+                            <Text style={styles.detailsMiniBtnText}>Recibo</Text>
+                          </TouchableOpacity>
+
+                          {/* Se já foi avaliado, NÃO deixa o botão de avaliar à mostra */}
+                          {hasReview ? (
+                            <View style={styles.alreadyReviewedBadge}>
+                              <Ionicons name="checkmark-circle" size={14} color="#2e7d32" />
+                              <Text style={styles.alreadyReviewedBadgeText}>Avaliado</Text>
+                            </View>
+                          ) : (
+                            <TouchableOpacity
+                              activeOpacity={0.85}
+                              style={styles.avaliarBtn}
+                              onPress={() => handleReview(item)}
+                            >
+                              <Ionicons name="star" size={13} color="#ffffff" />
+                              <Text style={styles.avaliarBtnText}>Avaliar</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                     </View>
-
-                    <View style={styles.compactFooterRow}>
-                      <View style={styles.starsRow}>
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Ionicons
-                            key={s}
-                            name={s <= (item.rating || 5) ? 'star' : 'star-outline'}
-                            size={16}
-                            color={QuixaColors.primary}
-                          />
-                        ))}
-                      </View>
-                      <View style={styles.concluidasActionsRow}>
-                        <TouchableOpacity
-                          activeOpacity={0.8}
-                          style={styles.detailsMiniBtn}
-                          onPress={() => handleReceipt(item)}
-                        >
-                          <Text style={styles.detailsMiniBtnText}>Recibo</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          activeOpacity={0.85}
-                          style={styles.avaliarBtn}
-                          onPress={() => handleReview(item)}
-                        >
-                          <Ionicons name="star" size={13} color="#ffffff" />
-                          <Text style={styles.avaliarBtnText}>Avaliar</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                ))
+                  );
+                })
               )}
             </View>
           )}
@@ -495,6 +635,181 @@ export default function ReservasScreen() {
               onPress={() => setShowVoucherModal(false)}
             >
               <Text style={styles.modalOkBtnText}>Fechar Voucher</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Cancelamento de Compra com Métricas e Período de Reembolso */}
+      <Modal
+        visible={showCancelModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCancelModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.cancelModalCard}>
+            {/* Header */}
+            <View style={styles.cancelHeaderRow}>
+              <View style={styles.cancelTitleGroup}>
+                <Ionicons name="alert-circle" size={24} color={QuixaColors.error} />
+                <Text style={styles.cancelModalTitle}>Cancelar Reserva</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowCancelModal(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={22} color={QuixaColors.onSurface} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.cancelScroll}>
+              {/* Métrica / Pergunta de confirmação */}
+              <View style={styles.confirmationMetricBox}>
+                <Text style={styles.confirmationMetricQuestion}>
+                  Você tem certeza que é isso que deseja fazer?
+                </Text>
+                <Text style={styles.confirmationMetricSub}>
+                  Ao prosseguir, sua vaga na atividade {selectedCancelItem?.title} ({selectedCancelItem?.reservation_code}) será cancelada.
+                </Text>
+              </View>
+
+              {/* Informações do Reembolso & Período para devolução */}
+              <View style={styles.refundDetailsCard}>
+                <View style={styles.refundCardHeader}>
+                  <Ionicons name="shield-checkmark" size={18} color="#2e7d32" />
+                  <Text style={styles.refundCardTitle}>Garantia e Período de Reembolso</Text>
+                </View>
+
+                <View style={styles.refundValueRow}>
+                  <Text style={styles.refundValueLabel}>Valor a ser reembolsado:</Text>
+                  <Text style={styles.refundValueHighlight}>
+                    {selectedCancelItem?.formatted_price || 'R$ 0,00'} (100% integral)
+                  </Text>
+                </View>
+
+                <View style={styles.refundInfoRow}>
+                  <Ionicons name="time-outline" size={16} color={QuixaColors.primary} />
+                  <Text style={styles.refundInfoText}>
+                    <Text style={{ fontWeight: '700' }}>Período de estorno:</Text> De 3 a 5 dias úteis (Pix estornado em até 2 horas úteis).
+                  </Text>
+                </View>
+
+                <View style={styles.refundInfoRow}>
+                  <Ionicons name="information-circle-outline" size={16} color={QuixaColors.secondary} />
+                  <Text style={styles.refundInfoText}>
+                    Cancelamento 100% gratuito respeitando o prazo de 24h antes do passeio.
+                  </Text>
+                </View>
+              </View>
+
+              {/* Justificativa Obrigatória */}
+              <View style={styles.reasonSection}>
+                <Text style={styles.reasonSectionTitle}>
+                  Justifique por que quer cancelar: <Text style={{ color: QuixaColors.error }}>*</Text>
+                </Text>
+
+                {/* Opções rápidas em chips */}
+                <View style={styles.reasonChipsWrap}>
+                  {CANCEL_REASONS.map((reason) => {
+                    const isSelected = selectedReasonOption === reason;
+                    return (
+                      <TouchableOpacity
+                        key={reason}
+                        activeOpacity={0.8}
+                        style={[
+                          styles.reasonChip,
+                          isSelected && styles.reasonChipActive,
+                        ]}
+                        onPress={() => setSelectedReasonOption(reason)}
+                      >
+                        <Text
+                          style={[
+                            styles.reasonChipText,
+                            isSelected && styles.reasonChipTextActive,
+                          ]}
+                        >
+                          {reason}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Campo de texto para justificar */}
+                <TextInput
+                  style={styles.reasonTextArea}
+                  placeholder="Escreva mais detalhes sobre o motivo do cancelamento (opcional)..."
+                  placeholderTextColor={QuixaColors.secondary}
+                  multiline
+                  numberOfLines={3}
+                  value={customReasonText}
+                  onChangeText={setCustomReasonText}
+                  textAlignVertical="top"
+                />
+              </View>
+            </ScrollView>
+
+            {/* Ações do Modal */}
+            <View style={styles.cancelModalActions}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.cancelKeepBtn}
+                onPress={() => setShowCancelModal(false)}
+                disabled={cancelling}
+              >
+                <Text style={styles.cancelKeepBtnText}>Não, manter reserva</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.88}
+                style={[styles.cancelConfirmBtn, cancelling && { opacity: 0.7 }]}
+                onPress={handleConfirmCancel}
+                disabled={cancelling}
+              >
+                {cancelling ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.cancelConfirmBtnText}>Sim, cancelar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de Sucesso no Cancelamento */}
+      <Modal
+        visible={Boolean(cancelSuccessData)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCancelSuccessData(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.successModalCard}>
+            <View style={styles.successIconCircle}>
+              <Ionicons name="checkmark-circle" size={54} color="#2e7d32" />
+            </View>
+
+            <Text style={styles.successModalTitle}>Cancelamento Efetuado</Text>
+            <Text style={styles.successModalSub}>
+              Sua reserva {cancelSuccessData?.item?.reservation_code} foi cancelada com sucesso.
+            </Text>
+
+            <View style={styles.successRefundBox}>
+              <Text style={styles.successRefundLabel}>Valor do reembolso:</Text>
+              <Text style={styles.successRefundAmount}>{cancelSuccessData?.formattedRefund}</Text>
+              <Text style={styles.successRefundTimeframe}>
+                {cancelSuccessData?.timeframe}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.88}
+              style={styles.modalOkBtn}
+              onPress={() => setCancelSuccessData(null)}
+            >
+              <Text style={styles.modalOkBtnText}>Entendido</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1007,6 +1322,312 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  heroActionButtonsCol: {
+    width: '100%',
+    gap: 8,
+  },
+  cancelBookingHeroBtn: {
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: '#ffebee',
+    borderWidth: 1,
+    borderColor: '#ffcdd2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  cancelBookingHeroBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: QuixaColors.error,
+  },
+  cancelMiniBtn: {
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#ffebee',
+    borderWidth: 1,
+    borderColor: '#ffcdd2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelMiniBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: QuixaColors.error,
+  },
+  reviewCommentBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#fdeae5',
+    padding: 10,
+    borderRadius: 14,
+    marginVertical: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: QuixaColors.primary,
+  },
+  reviewCommentText: {
+    flex: 1,
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: QuixaColors.onSurface,
+    lineHeight: 16,
+  },
+  alreadyReviewedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#e8f5e9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#c8e6c9',
+  },
+  alreadyReviewedBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2e7d32',
+  },
+  ratingNumberBadge: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: QuixaColors.primary,
+    marginLeft: 4,
+  },
+  cancelModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    padding: 20,
+    maxHeight: '85%',
+    gap: 14,
+  },
+  cancelHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1dfd9',
+  },
+  cancelTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cancelModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: QuixaColors.onSurface,
+  },
+  cancelScroll: {
+    maxHeight: 400,
+  },
+  confirmationMetricBox: {
+    backgroundColor: '#ffebee',
+    borderRadius: 16,
+    padding: 14,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#ffcdd2',
+    marginBottom: 12,
+  },
+  confirmationMetricQuestion: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: QuixaColors.error,
+    lineHeight: 20,
+  },
+  confirmationMetricSub: {
+    fontSize: 12,
+    color: '#7f0000',
+    lineHeight: 16,
+  },
+  refundDetailsCard: {
+    backgroundColor: '#fbf5f3',
+    borderRadius: 16,
+    padding: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#f1dfd9',
+    marginBottom: 14,
+  },
+  refundCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1dfd9',
+  },
+  refundCardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#2e7d32',
+  },
+  refundValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  refundValueLabel: {
+    fontSize: 12,
+    color: QuixaColors.onSurfaceVariant,
+  },
+  refundValueHighlight: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#2e7d32',
+  },
+  refundInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  refundInfoText: {
+    flex: 1,
+    fontSize: 11,
+    color: QuixaColors.onSurfaceVariant,
+    lineHeight: 15,
+  },
+  reasonSection: {
+    gap: 8,
+  },
+  reasonSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: QuixaColors.onSurface,
+  },
+  reasonChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  reasonChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: '#fdeae5',
+    borderWidth: 1,
+    borderColor: '#fbdcd0',
+  },
+  reasonChipActive: {
+    backgroundColor: QuixaColors.primary,
+    borderColor: QuixaColors.primary,
+  },
+  reasonChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: QuixaColors.onSurface,
+  },
+  reasonChipTextActive: {
+    color: '#ffffff',
+  },
+  reasonTextArea: {
+    backgroundColor: '#fbf5f3',
+    borderRadius: 14,
+    padding: 10,
+    fontSize: 12,
+    color: QuixaColors.onSurface,
+    minHeight: 70,
+    borderWidth: 1,
+    borderColor: '#f1dfd9',
+    marginTop: 4,
+  },
+  cancelModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f1dfd9',
+  },
+  cancelKeepBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fdeae5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelKeepBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: QuixaColors.primary,
+  },
+  cancelConfirmBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: QuixaColors.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: QuixaColors.error,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cancelConfirmBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    padding: 24,
+    alignItems: 'center',
+    gap: 12,
+  },
+  successIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#e8f5e9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: QuixaColors.onSurface,
+  },
+  successModalSub: {
+    fontSize: 13,
+    color: QuixaColors.onSurfaceVariant,
+    textAlign: 'center',
+  },
+  successRefundBox: {
+    width: '100%',
+    backgroundColor: '#fbf5f3',
+    padding: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#f1dfd9',
+  },
+  successRefundLabel: {
+    fontSize: 12,
+    color: QuixaColors.secondary,
+  },
+  successRefundAmount: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#2e7d32',
+  },
+  successRefundTimeframe: {
+    fontSize: 11,
+    color: QuixaColors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: 2,
   },
   bottomNav: {
     position: 'absolute',

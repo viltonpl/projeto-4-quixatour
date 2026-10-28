@@ -69,4 +69,8 @@ export const api = {
     apiRequest<T>(endpoint, 'GET', undefined, options),
   post: <T = any>(endpoint: string, body?: any, options?: RequestOptions) =>
     apiRequest<T>(endpoint, 'POST', body, options),
+  put: <T = any>(endpoint: string, body?: any, options?: RequestOptions) =>
+    apiRequest<T>(endpoint, 'PUT', body, options),
+  delete: <T = any>(endpoint: string, options?: RequestOptions) =>
+    apiRequest<T>(endpoint, 'DELETE', undefined, options),
 };

@@ -33,8 +33,9 @@ export default function AvaliarScreen() {
   const reservationIdParam = params.reservationId ? Number(params.reservationId) : 3;
   const initialTitle = (params.title as string) || 'Trilha da Galinha Choca';
   const initialGuideName = (params.guideName as string) || 'Guia Zé';
+  const initialRatingParam = params.initialRating ? Number(params.initialRating) : 5;
 
-  const [rating, setRating] = useState<number>(5);
+  const [rating, setRating] = useState<number>(initialRatingParam);
   const [comment, setComment] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [context, setContext] = useState<ReviewContext>({
@@ -160,19 +161,27 @@ export default function AvaliarScreen() {
                   return (
                     <TouchableOpacity
                       key={starVal}
-                      activeOpacity={0.7}
-                      style={styles.starBtn}
+                      activeOpacity={0.6}
+                      style={[
+                        styles.starBtn,
+                        starVal === rating && styles.starBtnSelected,
+                      ]}
                       onPress={() => setRating(starVal)}
                       accessibilityLabel={`${starVal} estrelas`}
                     >
                       <Ionicons
                         name={isFilled ? 'star' : 'star-outline'}
-                        size={36}
+                        size={38}
                         color={isFilled ? QuixaColors.primary : '#ddc0b6'}
                       />
                     </TouchableOpacity>
                   );
                 })}
+              </View>
+
+              <View style={styles.ratingScorePill}>
+                <Ionicons name="star" size={14} color="#ffffff" />
+                <Text style={styles.ratingScorePillText}>{rating} de 5 estrelas</Text>
               </View>
 
               <Text style={styles.ratingFeedbackText}>
@@ -348,6 +357,24 @@ const styles = StyleSheet.create({
   },
   starBtn: {
     padding: 4,
+  },
+  starBtnSelected: {
+    transform: [{ scale: 1.15 }],
+  },
+  ratingScorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: QuixaColors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 16,
+    marginBottom: 8,
+  },
+  ratingScorePillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   ratingFeedbackText: {
     fontSize: 16,

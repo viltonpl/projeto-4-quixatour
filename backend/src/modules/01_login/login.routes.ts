@@ -8,5 +8,7 @@ router.post('/login', LoginController.login);
 router.post('/register', LoginController.register);
 router.post('/forgot-password', LoginController.forgotPassword);
 router.get('/me', LoginController.getProfile);
+router.get('/profile', LoginController.getProfile);
+router.put('/profile', LoginController.updateProfile);
 
 export default router;

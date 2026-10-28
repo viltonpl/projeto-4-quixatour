@@ -18,6 +18,9 @@ export function initDatabase() {
       email TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
       avatar_url TEXT,
+      cpf TEXT DEFAULT '123.456.789-00',
+      nationality TEXT DEFAULT 'Brasileira',
+      phone TEXT DEFAULT '(88) 99876-5432',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -84,9 +87,13 @@ export function initDatabase() {
       discount REAL DEFAULT 0,
       total REAL NOT NULL,
       payment_method TEXT NOT NULL, -- 'pix' ou 'credit'
-      status TEXT NOT NULL, -- 'proximas' ou 'concluidas'
+      status TEXT NOT NULL, -- 'proximas', 'concluidas' ou 'canceladas'
       qr_code_data TEXT NOT NULL,
       voucher_instructions TEXT,
+      cancellation_reason TEXT,
+      refund_status TEXT,
+      refund_amount REAL,
+      cancelled_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -116,7 +123,255 @@ export function initDatabase() {
     );
   `);
 
+  // Migrações seguras para tabelas existentes
+  try { db.exec("ALTER TABLE users ADD COLUMN cpf TEXT DEFAULT '123.456.789-00'"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN nationality TEXT DEFAULT 'Brasileira'"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN phone TEXT DEFAULT '(88) 99876-5432'"); } catch (e) {}
+  try { db.exec("ALTER TABLE reservations ADD COLUMN cancellation_reason TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE reservations ADD COLUMN refund_status TEXT"); } catch (e) {}
+  try { db.exec("ALTER TABLE reservations ADD COLUMN refund_amount REAL"); } catch (e) {}
+  try { db.exec("ALTER TABLE reservations ADD COLUMN cancelled_at DATETIME"); } catch (e) {}
+
   seedInitialData();
+  ensureFullCategoriesAndExperiences();
+}
+
+function ensureFullCategoriesAndExperiences() {
+  // Garante que todas as categorias solicitadas existam no banco
+  const requiredCategories = [
+    'Todos',
+    'Aventuras',
+    'Trilhas',
+    'Hospedagens',
+    'Restaurantes',
+    'Comidas',
+    'Lazeres',
+    'Aventura',
+    'Chalés'
+  ];
+
+  const insertCat = db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)');
+  for (const cat of requiredCategories) {
+    insertCat.run(cat);
+  }
+
+  // Atualiza dados padrão do usuário 1 caso colunas novas estejam vazias
+  try {
+    db.prepare(`
+      UPDATE users 
+      SET 
+        name = CASE WHEN name IS NULL OR name = '' THEN 'Maria Silva' ELSE name END,
+        cpf = CASE WHEN cpf IS NULL OR cpf = '' THEN '123.456.789-00' ELSE cpf END,
+        nationality = CASE WHEN nationality IS NULL OR nationality = '' THEN 'Brasileira' ELSE nationality END,
+        phone = CASE WHEN phone IS NULL OR phone = '' THEN '(88) 99876-5432' ELSE phone END
+      WHERE id = 1
+    `).run();
+  } catch (err) {}
+
+  // Experiências adicionais para cobrir todas as categorias do filtro
+  const extraExperiences = [
+    {
+      id: 4,
+      category_name: 'Aventuras',
+      title: 'Rapel & Escalada nos Monólitos',
+      slug: 'rapel',
+      description: 'Experiência eletrizante de rapel e escalada assistida nos paredões rochosos mais emblemáticos de Quixadá.',
+      location: 'Monólito da Barriguda, Quixadá - CE',
+      meeting_point: 'Ponto de Apoio dos Escaladores',
+      duration: '2h30',
+      difficulty: 'Aventura moderada',
+      price: 150.0,
+      price_label: 'R$ 150',
+      rating: 4.9,
+      reviews_count: 53,
+      image_key: 'voo',
+      guide_id: 2,
+      inclusions: JSON.stringify(['Equipamento certificado UIAA', 'Instrutor credenciado', 'Fotos de ação']),
+      is_featured: 1
+    },
+    {
+      id: 5,
+      category_name: 'Trilhas',
+      title: 'Trilha Pedra do Racha ao Pôr do Sol',
+      slug: 'trilha-racha',
+      description: 'Contemple a vista 360 graus mais impressionante do sertão central durante o pôr do sol alaranjado.',
+      location: 'Pedra do Racha, Quixadá - CE',
+      meeting_point: 'Entrada da Fazenda Magé',
+      duration: '2h',
+      difficulty: 'Nível leve a moderado',
+      price: 65.0,
+      price_label: 'R$ 65',
+      rating: 4.8,
+      reviews_count: 78,
+      image_key: 'trilha',
+      guide_id: 1,
+      inclusions: JSON.stringify(['Guia credenciado', 'Lanterna para descida', 'Seguro']),
+      is_featured: 1
+    },
+    {
+      id: 6,
+      category_name: 'Hospedagens',
+      title: 'Pousada Pedra dos Ventos',
+      slug: 'pedra-ventos',
+      description: 'Hospedagem rústica de alto padrão localizada no topo da serra, com clima ameno e café sertanejo colonial.',
+      location: 'Serra da Pedra dos Ventos, Quixadá - CE',
+      meeting_point: 'Recepção Principal da Pousada',
+      duration: 'Diária',
+      difficulty: 'Hospedagem',
+      price: 250.0,
+      price_label: 'R$ 250 /noite',
+      rating: 5.0,
+      reviews_count: 110,
+      image_key: 'chale',
+      guide_id: 3,
+      inclusions: JSON.stringify(['Café colonial incluso', 'Piscina de borda infinita', 'Wi-Fi de fibra']),
+      is_featured: 1
+    },
+    {
+      id: 7,
+      category_name: 'Restaurantes',
+      title: 'Restaurante Sabor do Sertão Quixadaense',
+      slug: 'sabor-sertao',
+      description: 'Almoço tradicional com a legítima carne de sol de Quixadá feita na brasa, pirão de queijo e paçoca sertaneja.',
+      location: 'Açude do Cedro, Quixadá - CE',
+      meeting_point: 'Restaurante Sabor do Sertão',
+      duration: 'Livre',
+      difficulty: 'Gastronomia',
+      price: 75.0,
+      price_label: 'R$ 75 /pessoa',
+      rating: 4.9,
+      reviews_count: 142,
+      image_key: 'chale',
+      guide_id: 3,
+      inclusions: JSON.stringify(['Buffet sertanejo completo', 'Sobremesa de doce de leite', 'Música ao vivo']),
+      is_featured: 1
+    },
+    {
+      id: 8,
+      category_name: 'Restaurantes',
+      title: 'Bistrô Rural Monólito Dourado',
+      slug: 'monolito-dourado',
+      description: 'Experiência gastronômica intimista ao ar livre com pratos contemporâneos valorizando insumos locais da caatinga.',
+      location: 'Estrada do Cedro, Quixadá - CE',
+      meeting_point: 'Bistrô Rural',
+      duration: '2h',
+      difficulty: 'Gastronomia',
+      price: 95.0,
+      price_label: 'R$ 95 /pessoa',
+      rating: 4.7,
+      reviews_count: 45,
+      image_key: 'chale',
+      guide_id: 1,
+      inclusions: JSON.stringify(['Menu em 3 etapas', 'Suco de frutas típicas', 'Ambiente climatizado']),
+      is_featured: 1
+    },
+    {
+      id: 9,
+      category_name: 'Comidas',
+      title: 'Café Colonial Sertanejo & Queijo Coalho',
+      slug: 'cafe-colonial',
+      description: 'Visita guiada a fazenda produtora com degustação de queijo coalho artesanal assado na hora, tapiocas e cuscuz.',
+      location: 'Fazenda Três Irmãos, Quixadá - CE',
+      meeting_point: 'Sede da Fazenda',
+      duration: '1h30',
+      difficulty: 'Degustação',
+      price: 45.0,
+      price_label: 'R$ 45',
+      rating: 4.9,
+      reviews_count: 89,
+      image_key: 'chale',
+      guide_id: 3,
+      inclusions: JSON.stringify(['Degustação livre de queijos', 'Café coado no pano', 'Doces artesanais']),
+      is_featured: 1
+    },
+    {
+      id: 10,
+      category_name: 'Comidas',
+      title: 'Degustação de Carnes Nobres da Caatinga',
+      slug: 'carnes-caatinga',
+      description: 'Uma imersão gastronômica pelas tradições de cura da carne de sol e defumados do sertão cearense.',
+      location: 'Mercado Público de Quixadá - CE',
+      meeting_point: 'Box dos Mestres Queijeiros',
+      duration: '1h',
+      difficulty: 'Gastronomia',
+      price: 55.0,
+      price_label: 'R$ 55',
+      rating: 4.8,
+      reviews_count: 67,
+      image_key: 'trilha',
+      guide_id: 1,
+      inclusions: JSON.stringify(['Porções degustação', 'Harmonização com sucos regionais']),
+      is_featured: 1
+    },
+    {
+      id: 11,
+      category_name: 'Lazeres',
+      title: 'Passeio Histórico no Açude do Cedro & Museu',
+      slug: 'acude-cedro-historico',
+      description: 'Tour histórico com condutor pelo primeiro grande açude do Brasil, tombado pelo IPHAN, apreciando a arquitetura centenária em pedra.',
+      location: 'Monumento Açude do Cedro, Quixadá - CE',
+      meeting_point: 'Arco Histórico do Cedro',
+      duration: '1h30',
+      difficulty: 'Cultura e Lazer',
+      price: 35.0,
+      price_label: 'R$ 35',
+      rating: 4.9,
+      reviews_count: 115,
+      image_key: 'trilha',
+      guide_id: 1,
+      inclusions: JSON.stringify(['Entrada histórica', 'Guia historiador credenciado', 'Água mineral']),
+      is_featured: 1
+    },
+    {
+      id: 12,
+      category_name: 'Lazeres',
+      title: 'Passeio de Caiaque e Banho no Lago dos Monólitos',
+      slug: 'caiaque-lago',
+      description: 'Tarde relaxante remando em águas calmas com vista para os monólitos, área de banho segura e redes para descanso.',
+      location: 'Lagoa dos Monólitos, Quixadá - CE',
+      meeting_point: 'Deck das Canoas',
+      duration: '2h',
+      difficulty: 'Lazer leve',
+      price: 50.0,
+      price_label: 'R$ 50',
+      rating: 4.8,
+      reviews_count: 73,
+      image_key: 'voo',
+      guide_id: 2,
+      inclusions: JSON.stringify(['Colete salva-vidas', 'Caiaque duplo ou simples', 'Acesso à área vip de descanso']),
+      is_featured: 1
+    }
+  ];
+
+  const insertExp = db.prepare(`
+    INSERT OR REPLACE INTO experiences (
+      id, category_name, title, slug, description, location, meeting_point,
+      duration, difficulty, price, price_label, rating, reviews_count,
+      image_key, guide_id, inclusions, is_featured
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const exp of extraExperiences) {
+    insertExp.run(
+      exp.id,
+      exp.category_name,
+      exp.title,
+      exp.slug,
+      exp.description,
+      exp.location,
+      exp.meeting_point,
+      exp.duration,
+      exp.difficulty,
+      exp.price,
+      exp.price_label,
+      exp.rating,
+      exp.reviews_count,
+      exp.image_key,
+      exp.guide_id,
+      exp.inclusions,
+      exp.is_featured
+    );
+  }
 }
 
 function seedInitialData() {

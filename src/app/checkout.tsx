@@ -7,12 +7,12 @@ import {
   TextInput,
   Image,
   ScrollView,
-  StatusBar,
   Animated,
   Alert,
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -139,7 +139,7 @@ export default function CheckoutScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff8f6" />
+      <StatusBar style="dark" />
 
       {/* Header */}
       <View style={styles.header}>

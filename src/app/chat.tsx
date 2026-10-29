@@ -5,12 +5,12 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  StatusBar,
   TextInput,
   KeyboardAvoidingView,
   Platform,
   Alert,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -25,7 +25,7 @@ function formatTime(): string {
 export default function ChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<any>(null);
 
   const guideIdParam = params.guideId ? Number(params.guideId) : 1;
   const guideNameParam = (params.guideName as string) || 'Guia Zé';
@@ -132,7 +132,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff8f6" />
+      <StatusBar style="dark" />
 
       {/* ── Header ── */}
       <View style={styles.header}>

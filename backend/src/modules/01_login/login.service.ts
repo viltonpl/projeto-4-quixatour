@@ -12,7 +12,13 @@ export interface User {
 }
 
 export class LoginService {
-  static authenticate(email: string, password: string): { success: boolean; user?: User; token?: string; error?: string } {
+  /** Se o usuário for um prestador (guia), devolve o guia vinculado à conta. */
+  static getLinkedGuide(userId: number): { id: number; name: string; role: string } | null {
+    const guide = db.prepare('SELECT id, name, role FROM guides WHERE user_id = ?').get(userId) as any;
+    return guide || null;
+  }
+
+  static authenticate(email: string, password: string): { success: boolean; user?: User; token?: string; error?: string; role?: 'turista' | 'prestador'; guide?: { id: number; name: string; role: string } | null } {
     if (!email || !password) {
       return { success: false, error: 'E-mail e senha são obrigatórios.' };
     }
@@ -37,8 +43,12 @@ export class LoginService {
       }
     }
 
+    const guide = LoginService.getLinkedGuide(user.id);
+
     return {
       success: true,
+      role: guide ? 'prestador' : 'turista',
+      guide,
       user: {
         id: user.id,
         name: user.name,

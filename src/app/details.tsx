@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-import { AppImages } from '@/constants/images';
+import { resolveImage } from '@/constants/images';
 import { DetailsService, ExperienceDetails } from '@/services/detailsService';
 import { ExploreService } from '@/services/exploreService';
 
@@ -62,13 +62,7 @@ export default function DetailsScreen() {
 
   const currentImageKey = details?.image_key || initialImage;
 
-  const getImageSource = () => {
-    if (currentImageKey === 'trilha') return AppImages.trilha;
-    if (currentImageKey === 'voo') return AppImages.voo;
-    if (currentImageKey === 'chale') return AppImages.chale;
-    if (currentImageKey && currentImageKey.startsWith('http')) return { uri: currentImageKey };
-    return AppImages.trilha;
-  };
+  const getImageSource = () => resolveImage(currentImageKey);
 
   const handleBooking = () => {
     const title = details?.title || initialTitle;

@@ -15,6 +15,9 @@ export interface SubmitReviewData {
   rating: number;
   ratingLabel: string;
   comment: string;
+  /** Etapa 1: avaliação do guia */
+  guideRating?: number;
+  guideComment?: string;
 }
 
 export class AvaliarService {
@@ -42,8 +45,8 @@ export class AvaliarService {
       return res;
     } catch (err) {
       return {
-        success: true,
-        message: 'Avaliação enviada com sucesso!'
+        success: false,
+        message: 'Não foi possível conectar ao servidor. Tente novamente.'
       };
     }
   }

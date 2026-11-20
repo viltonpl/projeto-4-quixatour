@@ -1,4 +1,5 @@
 import { api } from './api';
+import { SessionStore, UserRole } from './session';
 
 export interface UserProfile {
   id: number;
@@ -11,28 +12,35 @@ export interface UserProfile {
 }
 
 export class LoginService {
-  static async login(email: string, password: string): Promise<{ success: boolean; user?: UserProfile; token?: string; message?: string }> {
+  static async login(email: string, password: string): Promise<{ success: boolean; user?: UserProfile; token?: string; message?: string; role?: UserRole; guide?: { id: number; name: string; role: string } | null }> {
+    // Uma nova autenticação substitui a sessão anterior desta aba
+    SessionStore.clear();
     try {
       const res = await api.post('/auth/login', { email, password });
       if (res.success && res.data?.user) {
-        return { success: true, user: res.data.user, token: res.data.token };
+        const { user, guide, token } = res.data;
+        const role: UserRole = res.data.role === 'prestador' && guide ? 'prestador' : 'turista';
+        SessionStore.set({
+          userId: user.id,
+          name: user.name,
+          email: user.email,
+          role,
+          guideId: guide?.id,
+          guideName: guide?.name,
+        });
+        return { success: true, user, token, role, guide };
       }
       return { success: false, message: res.message || 'Falha no login.' };
     } catch (err: any) {
-      // Fallback offline resiliente para não travar o app se o servidor estiver reiniciando
       return {
-        success: true,
-        user: {
-          id: 1,
-          name: 'Maria Silva',
-          email: email || 'seu@email.com',
-          cpf: '123.456.789-00',
-          nationality: 'Brasileira',
-          phone: '(88) 99876-5432'
-        },
-        token: 'local-token-fallback'
+        success: false,
+        message: 'Não foi possível conectar ao servidor. Verifique se o backend está rodando (npm run backend).',
       };
     }
+  }
+
+  static logout() {
+    SessionStore.clear();
   }
 
   static async register(name: string, email: string, password: string): Promise<{ success: boolean; message?: string }> {

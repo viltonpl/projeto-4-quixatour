@@ -8,8 +8,9 @@ export class ExploreController {
       const category = (req.query.category as string) || 'Todos';
       const search = (req.query.search as string) || '';
       const sortBy = (req.query.sortBy as string) || '';
+      const level = (req.query.level as string) || '';
 
-      const data = ExploreService.getExploreData(userId, category, search, sortBy);
+      const data = ExploreService.getExploreData(userId, category, search, sortBy, level);
       return res.status(200).json({ success: true, data });
     } catch (error) {
       console.error('Erro ao buscar dados do Explorar:', error);

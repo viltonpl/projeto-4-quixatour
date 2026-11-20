@@ -1,4 +1,4 @@
-import { db } from '../../database/db';
+import { db, createNotification } from '../../database/db';
 
 export interface CheckoutCalculation {
   numericPrice: number;
@@ -60,28 +60,33 @@ export class CheckoutService {
   static createReservation(data: CreateOrderDTO) {
     const userId = data.userId || 1;
     const count = Math.max(1, Math.min(8, data.participants || 1));
-    const isPix = data.paymentMethod === 'pix';
 
-    // 1. Localiza a experiência para vincular guia e id
-    let experience = db.prepare('SELECT id, guide_id, title, price, image_key FROM experiences WHERE LOWER(title) LIKE LOWER(?) OR id = ?')
-      .get(`%${data.title}%`, data.experienceId || 0) as any;
+    // Pagamento disponível apenas via Pix (cartão de crédito foi removido)
+    if (data.paymentMethod && data.paymentMethod !== 'pix') {
+      throw new Error('No momento, o pagamento é feito apenas via Pix.');
+    }
+
+    // 1. Localiza a experiência pelo id (ou, em último caso, pelo título exato)
+    const selectExp = 'SELECT id, guide_id, title, price, image_key, COALESCE(is_active, 1) as is_active FROM experiences';
+    let experience = data.experienceId
+      ? db.prepare(`${selectExp} WHERE id = ?`).get(data.experienceId) as any
+      : db.prepare(`${selectExp} WHERE LOWER(title) = LOWER(?)`).get(data.title || '') as any;
 
     if (!experience) {
-      experience = db.prepare('SELECT id, guide_id, title, price, image_key FROM experiences WHERE id = 1').get() as any;
+      throw new Error('Passeio não encontrado.');
+    }
+    if (!experience.is_active) {
+      throw new Error('Este passeio está pausado pelo guia no momento.');
     }
 
-    const calc = this.calculate(data.numericPrice || experience.price, count, data.paymentMethod);
-
-    // Validação de cartão se for crédito
-    if (!isPix && data.cardData) {
-      const { number, expiry, cvv } = data.cardData;
-      if (!number || !expiry || !cvv) {
-        throw new Error('Dados do cartão incompletos.');
-      }
-    }
+    // O preço vem sempre do banco (o cliente não define quanto vai pagar)
+    const calc = this.calculate(experience.price, count, 'pix');
 
     // 2. Gera código único de reserva (ex: #QX-6789)
-    const randomCode = `#QX-${Math.floor(1000 + Math.random() * 9000)}`;
+    let randomCode = '';
+    do {
+      randomCode = `#QX-${Math.floor(10000 + Math.random() * 90000)}`;
+    } while (db.prepare('SELECT 1 FROM reservations WHERE reservation_code = ?').get(randomCode));
     const schedule = data.scheduleText || 'Amanhã, 05:30';
     const qrCode = `QUIXATOUR-${randomCode.replace('#', '')}-VAL-2026`;
     const voucherText = 'Apresente este código ao condutor/guia credenciado no início do passeio.';
@@ -106,17 +111,25 @@ export class CheckoutService {
       calc.subtotal,
       calc.discount,
       calc.total,
-      data.paymentMethod,
-      'proximas',
+      'pix',
+      'pendente', // aguarda o guia aceitar no Painel do Prestador
       qrCode,
       voucherText
     );
 
     const created = db.prepare('SELECT * FROM reservations WHERE id = ?').get(result.lastInsertRowid) as any;
 
+    createNotification(
+      userId,
+      'pedido_enviado',
+      'Pagamento Pix confirmado',
+      `${experience.title} • ${count} ${count === 1 ? 'pessoa' : 'pessoas'} • R$ ${calc.total.toFixed(2).replace('.', ',')}. Pedido ${randomCode} enviado ao guia, aguardando confirmação.`,
+      { reservationId: created.id, guideId: experience.guide_id }
+    );
+
     return {
       success: true,
-      message: isPix ? 'Pagamento Pix confirmado!' : 'Pagamento com cartão aprovado!',
+      message: 'Pagamento Pix confirmado! Seu pedido foi enviado ao guia para confirmação.',
       reservation: created
     };
   }

@@ -10,6 +10,8 @@ export interface ExperienceItem {
   meeting_point: string;
   duration: string;
   difficulty: string;
+  /** 'leve' | 'moderado' | 'dificil' | null (não se aplica) */
+  level?: ExperienceLevel | null;
   price: number;
   price_label: string;
   rating: number;
@@ -21,6 +23,14 @@ export interface ExperienceItem {
   is_favorite: boolean;
 }
 
+export type ExperienceLevel = 'leve' | 'moderado' | 'dificil';
+
+export const LEVEL_OPTIONS: { key: ExperienceLevel; label: string; color: string }[] = [
+  { key: 'leve', label: 'Leve', color: '#2e7d32' },
+  { key: 'moderado', label: 'Moderado', color: '#b26a00' },
+  { key: 'dificil', label: 'Difícil', color: '#ba1a1a' },
+];
+
 export interface ExploreDataResponse {
   userName: string;
   greeting: string;
@@ -30,9 +40,9 @@ export interface ExploreDataResponse {
 }
 
 export class ExploreService {
-  static async getExploreData(category: string = 'Todos', search: string = '', sortBy: string = ''): Promise<ExploreDataResponse> {
+  static async getExploreData(category: string = 'Todos', search: string = '', sortBy: string = '', level: string = ''): Promise<ExploreDataResponse> {
     try {
-      const endpoint = `/explore?category=${encodeURIComponent(category)}&search=${encodeURIComponent(search)}&sortBy=${encodeURIComponent(sortBy)}`;
+      const endpoint = `/explore?category=${encodeURIComponent(category)}&search=${encodeURIComponent(search)}&sortBy=${encodeURIComponent(sortBy)}&level=${encodeURIComponent(level)}`;
       const res = await api.get(endpoint);
       if (res.success && res.data) {
         return res.data;

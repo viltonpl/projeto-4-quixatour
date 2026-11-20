@@ -12,7 +12,6 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
   Keyboard,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { AppImages } from '@/constants/images';
 import { LoginService } from '@/services/loginService';
+import { notify } from '@/components/ui/notify';
 
 type ButtonState = 'idle' | 'loading' | 'success';
 
@@ -32,46 +32,48 @@ export default function LoginScreen() {
     null
   );
   const [buttonState, setButtonState] = useState<ButtonState>('idle');
+  const [mode, setMode] = useState<'turista' | 'prestador'>('turista');
+
+  // Contas de teste: turista padrão e o Guia Zé (prestador)
+  const switchMode = (next: 'turista' | 'prestador') => {
+    setMode(next);
+    setEmail(next === 'prestador' ? 'ze@quixatour.com' : 'seu@email.com');
+    setPassword('123456');
+  };
 
   const handleLogin = async () => {
     setButtonState('loading');
 
-    try {
-      const response = await LoginService.login(email, password);
-      if (response.success) {
-        setButtonState('success');
-        setTimeout(() => {
-          setButtonState('idle');
-          router.replace('/explore');
-        }, 500);
-      } else {
+    const response = await LoginService.login(email, password);
+    if (response.success) {
+      setButtonState('success');
+      setTimeout(() => {
         setButtonState('idle');
-        Alert.alert('Erro ao entrar', response.message || 'Verifique seus dados e tente novamente.');
-      }
-    } catch (err: any) {
+        // A conta decide para onde ir: prestador → painel, turista → explorar
+        router.replace(response.role === 'prestador' ? '/prestador' : '/explore');
+      }, 500);
+    } else {
       setButtonState('idle');
-      Alert.alert('Aviso', 'Não foi possível conectar ao servidor agora. Entrando em modo offline...');
-      setTimeout(() => router.replace('/explore'), 500);
+      notify('Erro ao entrar', response.message || 'Verifique seus dados e tente novamente.');
     }
   };
 
   const handleForgotPassword = async () => {
     const res = await LoginService.forgotPassword(email || 'seu@email.com');
-    Alert.alert('Recuperar Senha', res.message);
+    notify('Recuperar Senha', res.message);
   };
 
   const handleCreateAccount = async () => {
     if (!email || !password) {
-      Alert.alert('Criar Conta', 'Por favor, preencha o e-mail e a senha desejados nos campos acima.');
+      notify('Criar Conta', 'Por favor, preencha o e-mail e a senha desejados nos campos acima.');
       return;
     }
     const res = await LoginService.register('Explorador', email, password);
     if (res.success) {
-      Alert.alert('Conta Criada!', 'Sua conta foi criada no banco de dados com sucesso. Fazendo login...', [
-        { text: 'OK', onPress: () => handleLogin() }
-      ]);
+      notify('Conta Criada!', 'Sua conta foi criada no banco de dados com sucesso. Fazendo login...');
+      handleLogin();
     } else {
-      Alert.alert('Aviso', res.message || 'Erro ao registrar conta.');
+      notify('Aviso', res.message || 'Erro ao registrar conta.');
     }
   };
 
@@ -100,8 +102,31 @@ export default function LoginScreen() {
 
                 <Text style={styles.title}>Entrar</Text>
                 <Text style={styles.subtitle}>
-                  Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+                  {mode === 'prestador'
+                    ? 'Guias e anfitriões: gerencie pedidos, passeios e ganhos.'
+                    : 'Descubra trilhas, aventuras e sabores do Sertão dos Monólitos.'}
                 </Text>
+              </View>
+
+              {/* Seletor Turista / Prestador */}
+              <View style={styles.modeSwitch}>
+                {(['turista', 'prestador'] as const).map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    activeOpacity={0.85}
+                    style={[styles.modeBtn, mode === m && styles.modeBtnActive]}
+                    onPress={() => switchMode(m)}
+                  >
+                    <Ionicons
+                      name={m === 'turista' ? 'compass-outline' : 'briefcase-outline'}
+                      size={16}
+                      color={mode === m ? QuixaColors.onPrimary : QuixaColors.secondary}
+                    />
+                    <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>
+                      {m === 'turista' ? 'Sou turista' : 'Sou prestador'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
 
               {/* Form inputs section */}
@@ -304,6 +329,33 @@ const styles = StyleSheet.create({
   formContainer: {
     width: '100%',
     gap: 16,
+  },
+  modeSwitch: {
+    flexDirection: 'row',
+    backgroundColor: QuixaColors.surfaceContainer,
+    borderRadius: 28,
+    padding: 4,
+    marginBottom: 20,
+  },
+  modeBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  modeBtnActive: {
+    backgroundColor: QuixaColors.primary,
+  },
+  modeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: QuixaColors.secondary,
+  },
+  modeTextActive: {
+    color: QuixaColors.onPrimary,
   },
   inputGroup: {
     gap: 6,

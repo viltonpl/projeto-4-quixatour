@@ -71,6 +71,27 @@ export default function ChatScreen() {
     };
   }, [guideIdParam]);
 
+  // Busca novas mensagens periodicamente (respostas que o guia envia pelo Painel do Prestador)
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const data = await ChatService.getMessages(guideIdParam);
+        if (data?.messages) {
+          setMessages((prev) =>
+            prev.some((m) => m.id.startsWith('temp-')) || prev.length === data.messages.length &&
+            prev[prev.length - 1]?.id === data.messages[data.messages.length - 1]?.id
+              ? prev
+              : data.messages
+          );
+        }
+        if (data?.context) setContext(data.context);
+      } catch {
+        // tenta de novo no próximo ciclo
+      }
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [guideIdParam]);
+
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text) return;

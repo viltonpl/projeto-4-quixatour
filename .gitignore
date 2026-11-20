@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# fotos e documentos enviados pelos prestadores
+backend/uploads/
+
 # Expo
 .expo/
 dist/

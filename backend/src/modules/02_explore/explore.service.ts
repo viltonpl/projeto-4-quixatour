@@ -22,7 +22,7 @@ export interface ExperienceDTO {
 }
 
 export class ExploreService {
-  static getExploreData(userId: number = 1, category: string = 'Todos', search: string = '', sortBy: string = '') {
+  static getExploreData(userId: number = 1, category: string = 'Todos', search: string = '', sortBy: string = '', level: string = '') {
     // 1. Dados do usuário logado para a saudação
     const user = db.prepare('SELECT name FROM users WHERE id = ?').get(userId) as { name: string } | undefined;
     const userName = user?.name || 'Maria';
@@ -47,7 +47,7 @@ export class ExploreService {
       FROM experiences e
       LEFT JOIN guides g ON e.guide_id = g.id
       LEFT JOIN favorites f ON f.experience_id = e.id AND f.user_id = ?
-      WHERE 1=1
+      WHERE COALESCE(e.is_active, 1) = 1 -- passeios pausados pelo prestador não aparecem
     `;
     const params: any[] = [userId];
 
@@ -61,6 +61,12 @@ export class ExploreService {
         query += ` AND LOWER(e.category_name) = LOWER(?)`;
         params.push(category);
       }
+    }
+
+    // Filtro por nível de dificuldade (leve / moderado / dificil)
+    if (['leve', 'moderado', 'dificil'].includes(level)) {
+      query += ` AND e.level = ?`;
+      params.push(level);
     }
 
     if (search && search.trim() !== '') {
@@ -91,6 +97,7 @@ export class ExploreService {
       meeting_point: exp.meeting_point,
       duration: exp.duration,
       difficulty: exp.difficulty,
+      level: exp.level || null,
       price: exp.price,
       price_label: exp.price_label,
       rating: exp.rating,

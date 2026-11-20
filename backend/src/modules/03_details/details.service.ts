@@ -61,6 +61,7 @@ export class DetailsService {
       meeting_point: raw.meeting_point,
       duration: raw.duration,
       difficulty: raw.difficulty,
+      level: raw.level || null,
       description: raw.description,
       inclusions: typeof raw.inclusions === 'string' ? JSON.parse(raw.inclusions) : raw.inclusions,
       is_favorite: Boolean(raw.is_favorite),

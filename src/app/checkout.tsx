@@ -17,7 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-import { AppImages } from '@/constants/images';
+import { resolveImage } from '@/constants/images';
+import { notify } from '@/components/ui/notify';
 import { CheckoutService } from '@/services/checkoutService';
 
 const GUIDE_AVATAR =
@@ -31,32 +32,23 @@ export default function CheckoutScreen() {
   const rawImage = (params.image as string) || 'trilha';
   const expId = params.id ? Number(params.id) : 1;
 
-  const getImageSource = () => {
-    if (rawImage === 'trilha') return AppImages.trilha;
-    if (rawImage === 'voo') return AppImages.voo;
-    if (rawImage === 'chale') return AppImages.chale;
-    if (rawImage && rawImage.startsWith('http')) return { uri: rawImage };
-    return AppImages.trilha;
-  };
+  const getImageSource = () => resolveImage(rawImage);
 
   // Base price calculation (default 85.0)
   const rawPriceStr = (params.price as string) || (params.priceNumber as string) || '85';
   const numericPrice = parseFloat(rawPriceStr.replace(/[^0-9,.]/g, '').replace(',', '.')) || 85.0;
 
   const [participants, setParticipants] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit'>('pix');
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('');
-  const [cardCvv, setCardCvv] = useState('');
-  const [installments, setInstallments] = useState('3');
+  // Pagamento somente via Pix (cartão de crédito removido)
+  const paymentMethod = 'pix' as const;
   const [submitting, setSubmitting] = useState(false);
 
   const [showToast, setShowToast] = useState(false);
   const toastAnim = useState(() => new Animated.Value(-60))[0];
 
   const subtotal = numericPrice * participants;
-  const isPix = paymentMethod === 'pix';
-  const discount = isPix ? subtotal * 0.05 : 0;
+  const isPix = true;
+  const discount = subtotal * 0.05;
   const total = subtotal - discount;
 
   const handleIncrease = () => {
@@ -85,53 +77,30 @@ export default function CheckoutScreen() {
   };
 
   const handleSubmitPayment = async () => {
-    if (!isPix && (!cardNumber.trim() || !cardExpiry.trim() || !cardCvv.trim())) {
-      if (Platform.OS === 'web') {
-        window.alert('Por favor, preencha os dados do cartão de crédito (Número, Validade e CVV).');
-      } else {
-        Alert.alert('Dados Incompletos', 'Por favor, preencha os dados do cartão de crédito.');
-      }
-      return;
-    }
-
     try {
       setSubmitting(true);
       const res = await CheckoutService.submitPayment({
+        experienceId: expId,
         title,
         numericPrice,
         participants,
         paymentMethod,
         scheduleText: 'Amanhã, 05:30',
         imageKey: rawImage,
-        cardData: !isPix ? {
-          number: cardNumber,
-          expiry: cardExpiry,
-          cvv: cardCvv,
-          installments: installments,
-        } : undefined,
       });
 
       if (res && res.success) {
-        if (Platform.OS === 'web') {
-          router.replace('/reservas');
-        } else {
-          Alert.alert(
-            isPix ? 'Reserva Realizada!' : 'Pagamento Aprovado!',
-            'Sua reserva foi gerada com sucesso e salva na sua lista de reservas!',
-            [
-              {
-                text: 'Ver Minhas Reservas',
-                onPress: () => router.replace('/reservas'),
-              },
-            ]
-          );
-        }
-      } else {
+        notify(
+          'Pagamento Pix confirmado!',
+          'Seu pedido foi enviado ao guia. Ele aparece em Minhas Reservas como "Aguardando guia" até ser confirmado.'
+        );
         router.replace('/reservas');
+      } else {
+        notify('Não foi possível reservar', res?.message || 'Tente novamente em instantes.');
       }
     } catch (err: any) {
       console.warn('Erro ao processar pagamento:', err);
-      router.replace('/reservas');
+      notify('Erro no pagamento', 'Não foi possível conectar ao servidor.');
     } finally {
       setSubmitting(false);
     }
@@ -258,7 +227,7 @@ export default function CheckoutScreen() {
           <View style={styles.paymentSection}>
             <View style={styles.paymentSectionHeader}>
               <Text style={styles.paymentSectionTitle}>Forma de Pagamento</Text>
-              <Text style={styles.paymentSectionSub}>Selecione sua preferência</Text>
+              <Text style={styles.paymentSectionSub}>Pagamento via Pix com 5% de desconto</Text>
             </View>
 
             {/* Opção 1: Pix */}
@@ -268,7 +237,6 @@ export default function CheckoutScreen() {
                 styles.paymentCard,
                 isPix && styles.paymentCardSelected,
               ]}
-              onPress={() => setPaymentMethod('pix')}
             >
               <View style={styles.paymentCardHeader}>
                 <View style={styles.paymentCardLeft}>
@@ -326,118 +294,6 @@ export default function CheckoutScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Opção 2: Cartão de Crédito */}
-            <TouchableOpacity
-              activeOpacity={0.92}
-              style={[
-                styles.paymentCard,
-                !isPix && styles.paymentCardSelected,
-              ]}
-              onPress={() => setPaymentMethod('credit')}
-            >
-              <View style={styles.paymentCardHeader}>
-                <View style={styles.paymentCardLeft}>
-                  <View
-                    style={[
-                      styles.radioCircle,
-                      !isPix && styles.radioCircleActive,
-                    ]}
-                  >
-                    {!isPix && (
-                      <Ionicons name="checkmark" size={16} color="#ffffff" />
-                    )}
-                  </View>
-
-                  <View style={styles.paymentTitleCol}>
-                    <Text style={styles.paymentTitle}>Cartão de Crédito</Text>
-                    <Text style={styles.creditSubtext}>
-                      Até 3x sem juros de R$ {(subtotal / 3).toFixed(2).replace('.', ',')}
-                    </Text>
-                  </View>
-                </View>
-
-                <Ionicons name="card-outline" size={24} color={QuixaColors.onSurfaceVariant} />
-              </View>
-
-              {/* Formulário do Cartão quando selecionado */}
-              {!isPix && (
-                <View style={styles.creditFormContainer}>
-                  <View style={styles.formFieldGroup}>
-                    <Text style={styles.fieldLabel}>Número do Cartão</Text>
-                    <View style={styles.inputBox}>
-                      <Ionicons name="card-outline" size={18} color={QuixaColors.outline} />
-                      <TextInput
-                        style={styles.fieldInput}
-                        placeholder="0000 0000 0000 0000"
-                        placeholderTextColor={QuixaColors.outline}
-                        keyboardType="numeric"
-                        maxLength={19}
-                        value={cardNumber}
-                        onChangeText={setCardNumber}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.formRowTwoCols}>
-                    <View style={[styles.formFieldGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>Validade</Text>
-                      <TextInput
-                        style={styles.fieldInputSolo}
-                        placeholder="MM/AA"
-                        placeholderTextColor={QuixaColors.outline}
-                        maxLength={5}
-                        value={cardExpiry}
-                        onChangeText={setCardExpiry}
-                      />
-                    </View>
-
-                    <View style={[styles.formFieldGroup, { flex: 1 }]}>
-                      <Text style={styles.fieldLabel}>CVV</Text>
-                      <TextInput
-                        style={styles.fieldInputSolo}
-                        placeholder="123"
-                        placeholderTextColor={QuixaColors.outline}
-                        keyboardType="numeric"
-                        secureTextEntry
-                        maxLength={4}
-                        value={cardCvv}
-                        onChangeText={setCardCvv}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.formFieldGroup}>
-                    <Text style={styles.fieldLabel}>Parcelas</Text>
-                    <View style={styles.installmentOptionsRow}>
-                      {['1', '2', '3'].map((num) => {
-                        const active = installments === num;
-                        const installVal = (total / parseInt(num)).toFixed(2).replace('.', ',');
-                        return (
-                          <TouchableOpacity
-                            key={num}
-                            activeOpacity={0.8}
-                            style={[
-                              styles.installmentChip,
-                              active && styles.installmentChipActive,
-                            ]}
-                            onPress={() => setInstallments(num)}
-                          >
-                            <Text
-                              style={[
-                                styles.installmentChipText,
-                                active && styles.installmentChipTextActive,
-                              ]}
-                            >
-                              {num}x R$ {installVal}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
-                </View>
-              )}
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -451,7 +307,7 @@ export default function CheckoutScreen() {
               R$ {total.toFixed(2).replace('.', ',')}
             </Text>
             <Text style={styles.totalBadgeText}>
-              {isPix ? 'com Pix (-5%)' : 'no Cartão'}
+              com Pix (-5%)
             </Text>
           </View>
         </View>
@@ -468,7 +324,7 @@ export default function CheckoutScreen() {
             <>
               <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
               <Text style={styles.submitBtnText}>
-                {isPix ? 'Pagar via Pix' : 'Confirmar Cartão'}
+                Pagar via Pix
               </Text>
             </>
           )}

@@ -8,6 +8,9 @@ export interface SubmitReviewDTO {
   rating: number;
   ratingLabel?: string;
   comment?: string;
+  /** Etapa 1 do fluxo: avaliação do guia */
+  guideRating?: number;
+  guideComment?: string;
 }
 
 const DEFAULT_RATING_LABELS: { [key: number]: string } = {
@@ -70,12 +73,27 @@ export class AvaliarService {
     // Remove avaliações anteriores da mesma reserva para garantir 1 avaliação única e atualizada
     db.prepare('DELETE FROM reviews WHERE reservation_id = ?').run(reservationId);
 
+    const guideRating = data.guideRating ? Math.max(1, Math.min(5, Number(data.guideRating))) : null;
+
     const stmt = db.prepare(`
-      INSERT INTO reviews (reservation_id, experience_id, user_id, guide_id, rating, rating_label, comment)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO reviews (reservation_id, experience_id, user_id, guide_id, rating, rating_label, comment, guide_rating, guide_comment)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(reservationId, experienceId, userId, guideId, rating, label, (data.comment || '').trim());
+    const result = stmt.run(
+      reservationId, experienceId, userId, guideId, rating, label, (data.comment || '').trim(),
+      guideRating, (data.guideComment || '').trim()
+    );
     const reviewId = Number(result.lastInsertRowid);
+
+    // Atualiza a nota média do guia com as avaliações recebidas
+    if (guideRating) {
+      const guideAvg = db.prepare(
+        'SELECT AVG(guide_rating) as avg FROM reviews WHERE guide_id = ? AND guide_rating IS NOT NULL'
+      ).get(guideId) as { avg: number | null };
+      if (guideAvg?.avg) {
+        db.prepare('UPDATE guides SET rating = ? WHERE id = ?').run(Number(guideAvg.avg.toFixed(1)), guideId);
+      }
+    }
 
     // Atualiza a média de avaliação da experiência no banco
     const avgData = db.prepare('SELECT AVG(rating) as avg_rating, COUNT(*) as count FROM reviews WHERE experience_id = ?')
@@ -91,7 +109,9 @@ export class AvaliarService {
       id: reviewId,
       rating,
       rating_label: label,
-      comment: data.comment
+      comment: data.comment,
+      guide_rating: guideRating,
+      guide_comment: data.guideComment || ''
     };
   }
 

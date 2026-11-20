@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { SessionStore } from './session';
 
 // Detecção inteligente de IP para que funcione perfeitamente no Celular (Expo Go) e na Web
 const getBaseUrl = (): string => {
@@ -31,13 +32,28 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
+/** Endereço do servidor sem o sufixo /api (usado para arquivos em /uploads). */
+export const SERVER_BASE_URL = API_BASE_URL.replace(/\/api$/, '');
+
 export async function apiRequest<T = any>(
   endpoint: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
   body?: any,
   options: RequestOptions = { timeoutMs: 7000 }
 ): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  let url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+  // Envia automaticamente o id do usuário logado (o backend lê userId da query ou do corpo)
+  const session = SessionStore.get();
+  if (session) {
+    if (method === 'GET' || method === 'DELETE') {
+      if (!/[?&]userId=/.test(url)) {
+        url += `${url.includes('?') ? '&' : '?'}userId=${session.userId}`;
+      }
+    } else if (body === undefined || (typeof body === 'object' && !Array.isArray(body))) {
+      body = { userId: session.userId, ...(body || {}) };
+    }
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs || 7000);

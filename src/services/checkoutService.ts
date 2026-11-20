@@ -15,6 +15,7 @@ export interface CalculationResult {
 }
 
 export interface PaymentData {
+  experienceId?: number;
   title: string;
   imageKey?: string;
   numericPrice: number;
@@ -67,15 +68,11 @@ export class CheckoutService {
       const res = await api.post('/checkout/pay', data);
       return res;
     } catch (err: any) {
-      console.warn('Erro na chamada da API de pagamento, fallback local:', err);
+      // Sem servidor não há reserva: não fingimos sucesso
+      console.warn('Erro na chamada da API de pagamento:', err);
       return {
-        success: true,
-        message: data.paymentMethod === 'pix' ? 'Pagamento Pix confirmado!' : 'Pagamento com cartão aprovado!',
-        reservation: {
-          reservation_code: `#QX-${Math.floor(1000 + Math.random() * 9000)}`,
-          title: data.title,
-          status: 'proximas'
-        }
+        success: false,
+        message: 'Não foi possível conectar ao servidor. Verifique se o backend está rodando.',
       };
     }
   }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -15,9 +15,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
 import { ProfileService, UserProfile, SacInfo } from '@/services/profileService';
+import { NotificacoesService } from '@/services/notificacoesService';
+import { SessionStore } from '@/services/session';
+import { confirmAction } from '@/components/ui/notify';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -36,6 +39,14 @@ export default function ProfileScreen() {
 
   // SAC state
   const [sacInfo, setSacInfo] = useState<SacInfo | null>(null);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  // Contador de notificações não lidas (atualiza ao voltar para o perfil)
+  useFocusEffect(
+    useCallback(() => {
+      NotificacoesService.unreadCount().then(setUnreadNotifications);
+    }, [])
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -105,17 +116,15 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = () => {
-    Alert.alert(
+    confirmAction(
       'Sair da Conta',
       'Tem certeza que deseja encerrar sua sessão e voltar à tela inicial?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sair',
-          style: 'destructive',
-          onPress: () => router.replace('/'),
-        },
-      ]
+      'Sair',
+      () => {
+        SessionStore.clear();
+        router.replace('/');
+      },
+      true
     );
   };
 
@@ -334,6 +343,26 @@ export default function ProfileScreen() {
 
               {/* Seção de Botões de Ação: SAC e Sair */}
               <View style={styles.actionsSection}>
+                {/* Botão Notificações (confirmações e respostas dos guias) */}
+                <TouchableOpacity
+                  activeOpacity={0.88}
+                  style={styles.actionBtnSac}
+                  onPress={() => router.push('/notificacoes')}
+                >
+                  <View style={styles.actionBtnLeft}>
+                    <View style={styles.actionIconCircleSac}>
+                      <Ionicons name="notifications-outline" size={20} color={QuixaColors.primary} />
+                    </View>
+                    <View>
+                      <Text style={styles.actionBtnTitle}>
+                        Notificações{unreadNotifications > 0 ? ` (${unreadNotifications})` : ''}
+                      </Text>
+                      <Text style={styles.actionBtnSub}>Confirmações e respostas dos guias</Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={QuixaColors.secondary} />
+                </TouchableOpacity>
+
                 {/* Botão Ajuda / SAC */}
                 <TouchableOpacity
                   activeOpacity={0.88}

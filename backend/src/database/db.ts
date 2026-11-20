@@ -132,8 +132,156 @@ export function initDatabase() {
   try { db.exec("ALTER TABLE reservations ADD COLUMN refund_amount REAL"); } catch (e) {}
   try { db.exec("ALTER TABLE reservations ADD COLUMN cancelled_at DATETIME"); } catch (e) {}
 
+  // Migrações do lado do prestador (guia / trabalhador)
+  try { db.exec("ALTER TABLE guides ADD COLUMN user_id INTEGER REFERENCES users(id)"); } catch (e) {}
+  try { db.exec("ALTER TABLE guides ADD COLUMN cadastur_status TEXT DEFAULT 'nao_enviado'"); } catch (e) {}
+  try { db.exec("ALTER TABLE experiences ADD COLUMN is_active INTEGER DEFAULT 1"); } catch (e) {}
+  try { db.exec("ALTER TABLE reservations ADD COLUMN responded_at DATETIME"); } catch (e) {}
+
+  // Nível de dificuldade do passeio: 'leve' | 'moderado' | 'dificil' (NULL = não se aplica, ex.: restaurante)
+  try { db.exec("ALTER TABLE experiences ADD COLUMN level TEXT"); } catch (e) {}
+  // Avaliação em duas etapas: nota do guia + nota da experiência
+  try { db.exec("ALTER TABLE reviews ADD COLUMN guide_rating INTEGER"); } catch (e) {}
+  try { db.exec("ALTER TABLE reviews ADD COLUMN guide_comment TEXT"); } catch (e) {}
+
+  db.exec(`
+    -- Notificações do turista (respostas do guia e confirmações do servidor)
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      type TEXT NOT NULL, -- 'pedido_enviado' | 'pedido_aceito' | 'pedido_recusado' | 'passeio_concluido' | 'mensagem'
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      reservation_id INTEGER,
+      guide_id INTEGER,
+      is_read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  db.exec(`
+    -- Saques via Pix solicitados pelo prestador
+    CREATE TABLE IF NOT EXISTS withdrawals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guide_id INTEGER NOT NULL REFERENCES guides(id),
+      amount REAL NOT NULL,
+      pix_key TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Verificação Cadastur do prestador
+    CREATE TABLE IF NOT EXISTS cadastur_verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guide_id INTEGER NOT NULL UNIQUE REFERENCES guides(id),
+      doc_front TEXT,
+      doc_back TEXT,
+      cadastur_number TEXT,
+      credential_file TEXT,
+      selfie TEXT,
+      ethics_accepted INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'rascunho', -- 'rascunho', 'em_analise', 'aprovado'
+      submitted_at DATETIME,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   seedInitialData();
   ensureFullCategoriesAndExperiences();
+  ensureProviderData();
+  ensureExperienceLevels();
+}
+
+/** Define o nível dos passeios de exemplo (só preenche quando ainda não há nível). */
+function ensureExperienceLevels() {
+  const levels: [number, string][] = [
+    [1, 'moderado'], // Trilha Galinha Choca
+    [2, 'leve'],     // Voo duplo de parapente
+    [4, 'dificil'],  // Rapel & Escalada
+    [5, 'leve'],     // Trilha Pedra do Racha
+    [11, 'leve'],    // Passeio histórico
+    [12, 'leve'],    // Caiaque
+  ];
+  const stmt = db.prepare('UPDATE experiences SET level = ? WHERE id = ? AND level IS NULL');
+  for (const [id, level] of levels) stmt.run(level, id);
+}
+
+export const LEVEL_LABELS: Record<string, string> = {
+  leve: 'Nível leve',
+  moderado: 'Nível moderado',
+  dificil: 'Nível difícil',
+};
+
+/** Registra uma notificação para o turista. */
+export function createNotification(
+  userId: number,
+  type: string,
+  title: string,
+  body: string,
+  extra: { reservationId?: number; guideId?: number } = {}
+) {
+  db.prepare(`
+    INSERT INTO notifications (user_id, type, title, body, reservation_id, guide_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(userId, type, title, body, extra.reservationId ?? null, extra.guideId ?? null);
+}
+
+/**
+ * Cria as contas de login dos prestadores (guias), vincula cada uma ao seu guia
+ * e gera pedidos de turistas de exemplo para o Painel do Prestador.
+ * Idempotente: pode rodar a cada inicialização.
+ */
+function ensureProviderData() {
+  const providers = [
+    { guideId: 1, name: 'Zé', email: 'ze@quixatour.com', cadastur: 'aprovado' },
+    { guideId: 2, name: 'Chico Asas', email: 'chico@quixatour.com', cadastur: 'aprovado' },
+    { guideId: 3, name: 'Clenilda Rocha', email: 'clenilda@quixatour.com', cadastur: 'nao_enviado' },
+  ];
+
+  const insertUser = db.prepare('INSERT OR IGNORE INTO users (name, email, password) VALUES (?, ?, ?)');
+  const findUser = db.prepare('SELECT id FROM users WHERE email = ?');
+  for (const p of providers) {
+    insertUser.run(p.name, p.email, '123456');
+    const user = findUser.get(p.email) as { id: number };
+    db.prepare(`
+      UPDATE guides
+      SET user_id = ?, cadastur_status = COALESCE(NULLIF(cadastur_status, 'nao_enviado'), ?)
+      WHERE id = ? AND user_id IS NULL
+    `).run(user.id, p.cadastur, p.guideId);
+  }
+
+  // Turistas de exemplo que fazem pedidos aos guias
+  insertUser.run('Mariana', 'mariana@email.com', '123456');
+  insertUser.run('Carlos', 'carlos@email.com', '123456');
+  const mariana = (findUser.get('mariana@email.com') as { id: number }).id;
+  const carlos = (findUser.get('carlos@email.com') as { id: number }).id;
+
+  const alreadySeeded = db.prepare("SELECT id FROM reservations WHERE reservation_code = '#QX-70001'").get();
+  if (alreadySeeded) return;
+
+  const insertRes = db.prepare(`
+    INSERT INTO reservations (
+      reservation_code, user_id, experience_id, guide_id, title,
+      schedule_text, date_label, participants, subtotal, discount, total,
+      payment_method, status, qr_code_data, voucher_instructions
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const voucher = 'Apresente este código ao condutor/guia credenciado no início do passeio.';
+
+  // Pedidos pendentes (aparecem em "Pedidos de Turistas")
+  insertRes.run('#QX-70001', mariana, 5, 1, 'Trilha Pedra do Racha ao Pôr do Sol', 'Amanhã às 16:00', 'Amanhã às 16:00', 2, 130, 0, 130, 'credit', 'pendente', 'QUIXATOUR-QX-70001-VAL-2026', voucher);
+  insertRes.run('#QX-70002', carlos, 4, 2, 'Rapel & Escalada nos Monólitos', 'Sábado, 08:00', 'Sábado, 08:00', 1, 150, 7.5, 142.5, 'pix', 'pendente', 'QUIXATOUR-QX-70002-VAL-2026', voucher);
+  insertRes.run('#QX-70003', carlos, 1, 1, 'Trilha Galinha Choca & Açude do Cedro', 'Domingo, 05:30', 'Domingo, 05:30', 3, 240, 12, 228, 'pix', 'pendente', 'QUIXATOUR-QX-70003-VAL-2026', voucher);
+
+  // Passeios já realizados (compõem o saldo para saque)
+  insertRes.run('#QX-70004', mariana, 1, 1, 'Trilha Galinha Choca & Açude do Cedro', '05 Nov 2026', '05 Nov 2026', 4, 320, 16, 304, 'pix', 'concluidas', 'QUIXATOUR-QX-70004-VAL-2026', voucher);
+  insertRes.run('#QX-70005', carlos, 11, 1, 'Passeio Histórico no Açude do Cedro & Museu', '09 Nov 2026', '09 Nov 2026', 2, 70, 0, 70, 'credit', 'concluidas', 'QUIXATOUR-QX-70005-VAL-2026', voucher);
+  insertRes.run('#QX-70006', mariana, 2, 2, 'Voo Duplo de Parapente', '12 Nov 2026', '12 Nov 2026', 2, 560, 28, 532, 'pix', 'concluidas', 'QUIXATOUR-QX-70006-VAL-2026', voucher);
+
+  // Conversa de exemplo de um turista com o Guia Zé
+  db.prepare(`
+    INSERT INTO messages (user_id, guide_id, sender_type, text, time, is_read)
+    VALUES (?, 1, 'user', ?, '13:40', 0)
+  `).run(mariana, 'Oi Zé! Dá pra levar uma criança de 10 anos na trilha da Pedra do Racha?');
 }
 
 function ensureFullCategoriesAndExperiences() {
@@ -343,8 +491,9 @@ function ensureFullCategoriesAndExperiences() {
     }
   ];
 
+  // INSERT OR IGNORE: não sobrescreve edições feitas pelo prestador (nem quebra FKs de reservas)
   const insertExp = db.prepare(`
-    INSERT OR REPLACE INTO experiences (
+    INSERT OR IGNORE INTO experiences (
       id, category_name, title, slug, description, location, meeting_point,
       duration, difficulty, price, price_label, rating, reviews_count,
       image_key, guide_id, inclusions, is_featured

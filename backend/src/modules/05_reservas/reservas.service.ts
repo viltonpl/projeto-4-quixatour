@@ -26,9 +26,13 @@ export class ReservasService {
     const allReservations = db.prepare(query).all(userId) as any[];
 
     const proximas = allReservations
-      .filter(r => r.status === 'proximas')
+      // 'pendente' = pedido aguardando o guia aceitar no Painel do Prestador
+      .filter(r => r.status === 'proximas' || r.status === 'pendente')
       .map(r => ({
         id: r.id,
+        experience_id: r.experience_id,
+        status: r.status,
+        status_label: r.status === 'pendente' ? 'Aguardando guia' : 'Confirmado',
         reservation_code: r.reservation_code,
         title: r.title,
         schedule_text: r.schedule_text,
@@ -51,6 +55,7 @@ export class ReservasService {
       .filter(r => r.status === 'concluidas')
       .map(r => ({
         id: r.id,
+        experience_id: r.experience_id,
         reservation_code: r.reservation_code,
         title: r.title,
         date_label: r.date_label,
@@ -69,9 +74,24 @@ export class ReservasService {
         }
       }));
 
+    // Pedidos recusados pelo guia (mostrados como aviso na aba Próximas)
+    const recusadas = allReservations
+      .filter(r => r.status === 'recusadas')
+      .map(r => ({
+        id: r.id,
+        reservation_code: r.reservation_code,
+        title: r.title,
+        schedule_text: r.schedule_text,
+        guide_name: r.guide_name,
+        reason: r.cancellation_reason,
+        refund_status: r.refund_status,
+        formatted_refund: `R$ ${(r.refund_amount ?? r.total).toFixed(2).replace('.', ',')}`,
+      }));
+
     return {
       proximas,
       concluidas,
+      recusadas,
       counts: {
         proximas: proximas.length,
         concluidas: concluidas.length

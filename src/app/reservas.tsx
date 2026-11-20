@@ -17,8 +17,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { RejectedItem } from '@/services/reservasService';
 import { QuixaColors } from '@/constants/theme';
-import { AppImages } from '@/constants/images';
+import { resolveImage } from '@/constants/images';
 import { ReservasService, ReservationItem } from '@/services/reservasService';
 
 const CANCEL_REASONS = [
@@ -54,13 +55,16 @@ export default function ReservasScreen() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelSuccessData, setCancelSuccessData] = useState<any | null>(null);
 
-  const loadReservations = useCallback(async () => {
+  const [recusadas, setRecusadas] = useState<RejectedItem[]>([]);
+
+  const loadReservations = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await ReservasService.getReservations();
       if (data) {
         setProximas(data.proximas || []);
         setConcluidas(data.concluidas || []);
+        setRecusadas(data.recusadas || []);
         setCounts(data.counts || {
           proximas: (data.proximas || []).length,
           concluidas: (data.concluidas || []).length,
@@ -78,6 +82,9 @@ export default function ReservasScreen() {
   useFocusEffect(
     useCallback(() => {
       loadReservations();
+      // Atualiza em segundo plano para refletir quando o guia aceita/recusa o pedido
+      const timer = setInterval(() => loadReservations(true), 8000);
+      return () => clearInterval(timer);
     }, [loadReservations])
   );
 
@@ -170,20 +177,14 @@ export default function ReservasScreen() {
       pathname: '/avaliar',
       params: {
         reservationId: String(item.id),
-        experienceId: String(item.id),
+        experienceId: String(item.experience_id ?? item.id),
         title: item.title,
         guideName: item.guide?.name || 'Guia Zé',
       },
     });
   };
 
-  const getImageSource = (key: string) => {
-    if (key === 'trilha') return AppImages.trilha;
-    if (key === 'voo') return AppImages.voo;
-    if (key === 'chale') return AppImages.chale;
-    if (key && key.startsWith('http')) return { uri: key };
-    return AppImages.trilha;
-  };
+  const getImageSource = (key: string) => resolveImage(key);
 
   const heroItem = proximas.length > 0 ? proximas[0] : null;
   const remainingUpcoming = proximas.slice(1);
@@ -283,14 +284,26 @@ export default function ReservasScreen() {
           {/* TAB 1: Próximas Reservas */}
           {!loading && activeTab === 'proximas' && (
             <View style={styles.tabContentGroup}>
+              {/* Pedidos recusados pelo guia */}
+              {recusadas.map((r) => (
+                <View key={r.id} style={styles.rejectedBanner}>
+                  <Ionicons name="close-circle" size={20} color={QuixaColors.error} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rejectedTitle}>
+                      Pedido {r.reservation_code} recusado por {r.guide_name || 'guia'}
+                    </Text>
+                    <Text style={styles.rejectedText}>
+                      {r.title} • {r.reason} Reembolso de {r.formatted_refund}: {r.refund_status}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+
               {heroItem ? (
                 /* Card Principal Hero */
                 <View style={styles.heroCard}>
                   <View style={styles.cardStatusRow}>
-                    <View style={styles.confirmedTag}>
-                      <Ionicons name="checkmark-circle" size={14} color="#8c3d17" />
-                      <Text style={styles.confirmedTagText}>Confirmado</Text>
-                    </View>
+                    <StatusTag status={heroItem.status} />
                     <Text style={styles.reservationCodeText}>{heroItem.reservation_code}</Text>
                   </View>
 
@@ -357,14 +370,24 @@ export default function ReservasScreen() {
 
                   {/* Hero Action Buttons: Ver Voucher & Cancelar Compra */}
                   <View style={styles.heroActionButtonsCol}>
-                    <TouchableOpacity
-                      activeOpacity={0.88}
-                      style={styles.voucherBtn}
-                      onPress={() => handleOpenVoucher(heroItem)}
-                    >
-                      <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
-                      <Text style={styles.voucherBtnText}>Ver Voucher</Text>
-                    </TouchableOpacity>
+                    {heroItem.status === 'pendente' ? (
+                      <View style={styles.pendingInfo}>
+                        <Ionicons name="hourglass-outline" size={18} color="#8c3d17" />
+                        <Text style={styles.pendingInfoText}>
+                          Pagamento recebido. O voucher é liberado assim que {heroItem.guide?.name || 'o guia'} confirmar
+                          seu pedido.
+                        </Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        activeOpacity={0.88}
+                        style={styles.voucherBtn}
+                        onPress={() => handleOpenVoucher(heroItem)}
+                      >
+                        <Ionicons name="qr-code-outline" size={20} color="#ffffff" />
+                        <Text style={styles.voucherBtnText}>Ver Voucher</Text>
+                      </TouchableOpacity>
+                    )}
 
                     <TouchableOpacity
                       activeOpacity={0.85}
@@ -392,10 +415,7 @@ export default function ReservasScreen() {
                   {remainingUpcoming.map((item) => (
                     <View key={item.id} style={styles.compactCard}>
                       <View style={styles.cardStatusRow}>
-                        <View style={styles.confirmedTag}>
-                          <Ionicons name="checkmark" size={13} color="#8c3d17" />
-                          <Text style={styles.confirmedTagText}>Confirmado</Text>
-                        </View>
+                        <StatusTag status={item.status} />
                         <Text style={styles.reservationCodeText}>{item.reservation_code}</Text>
                       </View>
 
@@ -435,13 +455,15 @@ export default function ReservasScreen() {
                           >
                             <Text style={styles.cancelMiniBtnText}>Cancelar</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity
-                            activeOpacity={0.8}
-                            style={styles.detailsMiniBtn}
-                            onPress={() => handleOpenVoucher(item)}
-                          >
-                            <Text style={styles.detailsMiniBtnText}>Voucher</Text>
-                          </TouchableOpacity>
+                          {item.status !== 'pendente' && (
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              style={styles.detailsMiniBtn}
+                              onPress={() => handleOpenVoucher(item)}
+                            >
+                              <Text style={styles.detailsMiniBtnText}>Voucher</Text>
+                            </TouchableOpacity>
+                          )}
                           <TouchableOpacity
                             activeOpacity={0.8}
                             style={[styles.detailsMiniBtn, { backgroundColor: '#fbdcd0' }]}
@@ -536,7 +558,7 @@ export default function ReservasScreen() {
                                       pathname: '/avaliar',
                                       params: {
                                         reservationId: String(item.id),
-                                        experienceId: String(item.id),
+                                        experienceId: String(item.experience_id ?? item.id),
                                         title: item.title,
                                         guideName: item.guide?.name || 'Guia Zé',
                                         initialRating: String(s),
@@ -873,7 +895,54 @@ export default function ReservasScreen() {
   );
 }
 
+/** Selo de status da reserva: confirmada pelo guia ou aguardando resposta. */
+function StatusTag({ status }: { status?: string }) {
+  const pending = status === 'pendente';
+  return (
+    <View style={[styles.confirmedTag, pending && styles.pendingTag]}>
+      <Ionicons name={pending ? 'hourglass-outline' : 'checkmark-circle'} size={14} color="#8c3d17" />
+      <Text style={styles.confirmedTagText}>{pending ? 'Aguardando guia' : 'Confirmado'}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  pendingTag: {
+    backgroundColor: '#ffe9b8',
+  },
+  pendingInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fff4dc',
+    borderRadius: 20,
+    padding: 14,
+  },
+  pendingInfoText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#5e4031',
+    lineHeight: 18,
+  },
+  rejectedBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: QuixaColors.errorContainer,
+    borderRadius: 20,
+    padding: 14,
+  },
+  rejectedTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: QuixaColors.error,
+  },
+  rejectedText: {
+    fontSize: 12,
+    color: QuixaColors.onSurfaceVariant,
+    marginTop: 2,
+    lineHeight: 17,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: QuixaColors.background,

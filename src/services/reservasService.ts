@@ -2,6 +2,10 @@ import { api } from './api';
 
 export interface ReservationItem {
   id: number;
+  experience_id?: number;
+  /** 'pendente' (aguardando o guia) | 'proximas' (confirmada) | 'concluidas' */
+  status?: string;
+  status_label?: string;
   reservation_code: string;
   title: string;
   schedule_text: string;
@@ -27,9 +31,22 @@ export interface ReservationItem {
   };
 }
 
+/** Pedido recusado pelo guia no Painel do Prestador. */
+export interface RejectedItem {
+  id: number;
+  reservation_code: string;
+  title: string;
+  schedule_text: string;
+  guide_name?: string;
+  reason: string;
+  refund_status: string;
+  formatted_refund: string;
+}
+
 export interface ReservasResponse {
   proximas: ReservationItem[];
   concluidas: ReservationItem[];
+  recusadas?: RejectedItem[];
   counts: {
     proximas: number;
     concluidas: number;

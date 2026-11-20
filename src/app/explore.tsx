@@ -13,10 +13,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { QuixaColors } from '@/constants/theme';
-import { AppImages } from '@/constants/images';
-import { ExploreService, ExperienceItem } from '@/services/exploreService';
+import { resolveImage } from '@/constants/images';
+import { ExploreService, ExperienceItem, ExperienceLevel, LEVEL_OPTIONS } from '@/services/exploreService';
+import { NotificacoesService } from '@/services/notificacoesService';
+import { SessionStore } from '@/services/session';
 
 import { Modal } from 'react-native';
 
@@ -36,6 +38,10 @@ export default function ExploreScreen() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [tempSort, setTempSort] = useState<'none' | 'cheapest' | 'expensive'>('none');
   const [tempCategory, setTempCategory] = useState<string>('Todos');
+  // Filtro por nível de dificuldade ('' = todos os níveis)
+  const [selectedLevel, setSelectedLevel] = useState<ExperienceLevel | ''>('');
+  const [tempLevel, setTempLevel] = useState<ExperienceLevel | ''>('');
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const [favorites, setFavorites] = useState<{ [key: string]: boolean }>({});
   const [activeTab, setActiveTab] = useState<'explorar' | 'favoritos' | 'notificacoes' | 'reservas'>('explorar');
@@ -55,10 +61,10 @@ export default function ExploreScreen() {
   const [experiences, setExperiences] = useState<ExperienceItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const fetchExplore = useCallback(async (cat: string, search: string, sort: string) => {
+  const fetchExplore = useCallback(async (cat: string, search: string, sort: string, level: string) => {
     try {
       setLoading(true);
-      const data = await ExploreService.getExploreData(cat, search, sort === 'none' ? '' : sort);
+      const data = await ExploreService.getExploreData(cat, search, sort === 'none' ? '' : sort, level);
       setUserName(data.userName || 'Maria');
       setGreeting(data.greeting || 'Olá, Maria!');
       setSubtitle(data.subtitle || 'O que vamos explorar em Quixadá hoje?');
@@ -80,8 +86,21 @@ export default function ExploreScreen() {
   }, []);
 
   useEffect(() => {
-    fetchExplore(selectedCategory, searchQuery, selectedSort);
-  }, [selectedCategory, searchQuery, selectedSort, fetchExplore]);
+    fetchExplore(selectedCategory, searchQuery, selectedSort, selectedLevel);
+  }, [selectedCategory, searchQuery, selectedSort, selectedLevel, fetchExplore]);
+
+  // Contador de notificações não lidas no sino (atualiza enquanto a tela está aberta)
+  useFocusEffect(
+    useCallback(() => {
+      const refresh = () => NotificacoesService.unreadCount().then(setUnreadNotifications);
+      refresh();
+      const timer = setInterval(refresh, 8000);
+      return () => clearInterval(timer);
+    }, [])
+  );
+
+  const hasFilters = selectedSort !== 'none' || selectedCategory !== 'Todos' || selectedLevel !== '';
+  const levelLabel = (key?: string | null) => LEVEL_OPTIONS.find((l) => l.key === key);
 
   const toggleFavorite = async (id: number) => {
     const key = `card${id}`;
@@ -104,29 +123,28 @@ export default function ExploreScreen() {
   const handleOpenFilter = () => {
     setTempSort(selectedSort);
     setTempCategory(selectedCategory);
+    setTempLevel(selectedLevel);
     setShowFilterModal(true);
   };
 
   const handleApplyFilter = () => {
     setSelectedSort(tempSort);
     setSelectedCategory(tempCategory);
+    setSelectedLevel(tempLevel);
     setShowFilterModal(false);
   };
 
   const handleClearFilter = () => {
     setTempSort('none');
     setTempCategory('Todos');
+    setTempLevel('');
     setSelectedSort('none');
     setSelectedCategory('Todos');
+    setSelectedLevel('');
     setShowFilterModal(false);
   };
 
-  const getImageSource = (key: string) => {
-    if (key === 'trilha') return AppImages.trilha;
-    if (key === 'voo') return AppImages.voo;
-    if (key === 'chale') return AppImages.chale;
-    return AppImages.trilha;
-  };
+  const getImageSource = (key: string) => resolveImage(key);
 
   // Se a aba for 'favoritos', filtra apenas as experiências marcadas com coração
   const displayedExperiences = activeTab === 'favoritos'
@@ -145,10 +163,10 @@ export default function ExploreScreen() {
           {/* 2. Saudação e Foto de Perfil */}
           <View style={styles.greetingRow}>
             <View style={styles.greetingTextCol}>
-              <Text style={styles.greetingTitle}>Olá, Maria!</Text>
-              <Text style={styles.greetingSubtitle}>
-                O que vamos explorar em Quixadá hoje?
+              <Text style={styles.greetingTitle}>
+                Olá, {(SessionStore.get()?.name || userName || 'Explorador').split(' ')[0]}!
               </Text>
+              <Text style={styles.greetingSubtitle}>{subtitle}</Text>
             </View>
 
             <TouchableOpacity
@@ -184,21 +202,28 @@ export default function ExploreScreen() {
               activeOpacity={0.85}
               style={[
                 styles.filterBtn,
-                (selectedSort !== 'none' || selectedCategory !== 'Todos') && styles.filterBtnActive,
+                hasFilters && styles.filterBtnActive,
               ]}
               onPress={handleOpenFilter}
               accessibilityLabel="Filtros e ordenação"
             >
               <Ionicons name="options-outline" size={22} color="#ffffff" />
-              {(selectedSort !== 'none' || selectedCategory !== 'Todos') && (
-                <View style={styles.filterBadgeDot} />
-              )}
+              {hasFilters && <View style={styles.filterBadgeDot} />}
             </TouchableOpacity>
           </View>
 
           {/* Active Filter Badges */}
-          {(selectedSort !== 'none' || selectedCategory !== 'Todos') && (
+          {hasFilters && (
             <View style={styles.activeFiltersRow}>
+              {selectedLevel !== '' && (
+                <View style={styles.activeFilterPill}>
+                  <Ionicons name="trending-up-outline" size={14} color={QuixaColors.primary} />
+                  <Text style={styles.activeFilterPillText}>Nível {levelLabel(selectedLevel)?.label}</Text>
+                  <TouchableOpacity onPress={() => setSelectedLevel('')} style={styles.activeFilterClose}>
+                    <Ionicons name="close-circle" size={16} color={QuixaColors.primary} />
+                  </TouchableOpacity>
+                </View>
+              )}
               {selectedSort !== 'none' && (
                 <View style={styles.activeFilterPill}>
                   <Ionicons
@@ -338,6 +363,15 @@ export default function ExploreScreen() {
                       </View>
                     </View>
 
+                    {levelLabel(item.level) && (
+                      <View style={[styles.levelBadge, { borderColor: levelLabel(item.level)!.color }]}>
+                        <Ionicons name="trending-up-outline" size={13} color={levelLabel(item.level)!.color} />
+                        <Text style={[styles.levelBadgeText, { color: levelLabel(item.level)!.color }]}>
+                          Nível {levelLabel(item.level)!.label}
+                        </Text>
+                      </View>
+                    )}
+
                     <View style={styles.cardFooterRow}>
                       <View style={styles.cardDetailInfo}>
                         <Ionicons
@@ -387,17 +421,19 @@ export default function ExploreScreen() {
           />
         </TouchableOpacity>
 
-        {/* Tab 3: Notificações */}
+        {/* Tab 3: Notificações (abre a tela de notificações do turista) */}
         <TouchableOpacity
           activeOpacity={0.8}
-          style={[styles.navBtn, activeTab === 'notificacoes' && styles.navBtnActive]}
-          onPress={() => setActiveTab('notificacoes')}
+          style={styles.navBtn}
+          onPress={() => router.push('/notificacoes')}
+          accessibilityLabel="Notificações"
         >
-          <Ionicons
-            name={activeTab === 'notificacoes' ? 'notifications' : 'notifications-outline'}
-            size={24}
-            color={activeTab === 'notificacoes' ? '#ffffff' : QuixaColors.secondary}
-          />
+          <Ionicons name="notifications-outline" size={24} color={QuixaColors.secondary} />
+          {unreadNotifications > 0 && (
+            <View style={styles.navBadge}>
+              <Text style={styles.navBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         {/* Tab 4: Ticket / Minhas Reservas (Redireciona para Minhas Reservas) */}
@@ -497,6 +533,31 @@ export default function ExploreScreen() {
                       Mais caro
                     </Text>
                   </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Seção: Nível de dificuldade */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterSectionTitle}>NÍVEL DE DIFICULDADE</Text>
+                <View style={styles.filterCategoryWrap}>
+                  {LEVEL_OPTIONS.map((lvl) => {
+                    const isSelected = tempLevel === lvl.key;
+                    return (
+                      <TouchableOpacity
+                        key={lvl.key}
+                        activeOpacity={0.8}
+                        style={[styles.categoryChoiceChip, isSelected && styles.categoryChoiceChipActive]}
+                        onPress={() => setTempLevel((prev) => (prev === lvl.key ? '' : lvl.key))}
+                      >
+                        <View style={[styles.levelDot, { backgroundColor: isSelected ? '#ffffff' : lvl.color }]} />
+                        <Text
+                          style={[styles.categoryChoiceChipText, isSelected && styles.categoryChoiceChipTextActive]}
+                        >
+                          {lvl.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
 
@@ -842,6 +903,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '400',
     color: QuixaColors.onSurfaceVariant,
+  },
+  levelBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  levelBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  levelDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  navBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: '#ba1a1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
   },
   bottomNav: {
     position: 'absolute',
